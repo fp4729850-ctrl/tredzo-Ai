@@ -292,6 +292,30 @@ Deno.serve(async (req) => {
     last_signal: result.signal,
   }).eq('id', body.strategyId);
 
+  /* 9. Send notification (non-blocking) */
+  const stratName = strategy.name ?? 'Strategy';
+  fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-notification`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+    },
+    body: JSON.stringify({
+      userId,
+      signal: result.signal,
+      symbol: params.symbol,
+      price: result.price,
+      reason: result.reason,
+      timeframe: effectiveTF,
+      strategyName: stratName,
+      sl: order ? result.price * (1 - effectiveSL / 100) : null,
+      tp1: tp1 ? result.price * (1 + tp1 / 100) : null,
+      tp2: tp2 ? result.price * (1 + tp2 / 100) : null,
+      tp3: tp3 ? result.price * (1 + tp3 / 100) : null,
+      mode: useTestnet ? 'testnet' : 'real',
+    }),
+  }).catch(() => {}); // fire-and-forget
+
   return json({
     signal: result.signal,
     reason: result.reason,

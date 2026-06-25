@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Code2, Plus, Play, Pause, Trash2, Bot, Loader2, Sparkles, Zap, TrendingUp, TrendingDown, Activity, ShieldAlert, Save, Clock } from 'lucide-react';
 import { toast } from 'sonner';
-import { getStrategies, createStrategy, updateStrategy, deleteStrategy, executeStrategy } from '@/services/api';
+import { getStrategies, createStrategy, updateStrategy, deleteStrategy, executeStrategy, getAllTradesSummary } from '@/services/api';
 import { supabase } from '@/db/supabase';
 import type { Strategy, StrategyParams } from '@/types/types';
 import { cn } from '@/lib/utils';
@@ -81,10 +81,15 @@ export default function StrategiesPage() {
   const [savingRisk, setSavingRisk] = useState(false);
   const [justAnalyzedId, setJustAnalyzedId] = useState<string | null>(null);
   const riskPanelRef = useRef<HTMLDivElement>(null);
+  const [pnlMap, setPnlMap] = useState<Record<string, { totalTrades: number; wins: number; realizedPnlPct: number; openCount: number }>>({});
 
   const load = useCallback(async () => {
-    const data = await getStrategies();
+    const [data, summary] = await Promise.all([
+      getStrategies(),
+      getAllTradesSummary(),
+    ]);
     setStrategies(data);
+    setPnlMap(summary.bySymbol);
   }, []);
 
   useEffect(() => {
@@ -247,11 +252,18 @@ export default function StrategiesPage() {
 
   const handleTimeframeChange = async (strategy: Strategy, tf: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    // Optimistic update
     setStrategies(prev => prev.map(s => s.id === strategy.id ? { ...s, timeframe: tf } : s));
     if (selectedStrategy?.id === strategy.id) setSelectedStrategy(s => s ? { ...s, timeframe: tf } : s);
     await updateStrategy(strategy.id, { timeframe: tf } as Partial<Strategy>);
     toast.success(`Timeframe set to ${tf}`, { icon: '⏱️', duration: 2000 });
+  };
+
+  const handleSymbolChange = async (strategy: Strategy, sym: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setStrategies(prev => prev.map(s => s.id === strategy.id ? { ...s, symbol: sym } : s));
+    if (selectedStrategy?.id === strategy.id) setSelectedStrategy(s => s ? { ...s, symbol: sym } : s);
+    await updateStrategy(strategy.id, { symbol: sym } as Partial<Strategy>);
+    toast.success(`Symbol set to ${sym}`, { icon: '📈', duration: 2000 });
   };
 
   // ── Bot status helpers ──
@@ -459,8 +471,30 @@ export default function StrategiesPage() {
                       <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
-                  {/* Timeframe picker */}
+                  {/* Symbol picker */}
                   <div className="mt-2 flex items-center gap-1 flex-wrap" onClick={e => e.stopPropagation()}>
+                    <span className="text-[10px] text-muted-foreground shrink-0">Symbol:</span>
+                    {(['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT'] as const).map(sym => {
+                      const label = sym.replace('USDT','');
+                      const activeSym = (strategy.symbol ?? strategy.strategy_params?.symbol ?? 'BTCUSDT') === sym;
+                      return (
+                        <button
+                          key={sym}
+                          onClick={e => handleSymbolChange(strategy, sym, e)}
+                          className={cn(
+                            'h-5 rounded px-1.5 text-[10px] font-mono font-medium transition-all border',
+                            activeSym
+                              ? 'bg-primary border-primary text-primary-foreground'
+                              : 'bg-transparent border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
+                          )}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* Timeframe picker */}
+                  <div className="mt-1.5 flex items-center gap-1 flex-wrap" onClick={e => e.stopPropagation()}>
                     <span className="text-[10px] text-muted-foreground shrink-0">Timeframe:</span>
                     {(['1m','5m','15m','30m','1h','4h','1d'] as const).map(tf => {
                       const active = (strategy.timeframe ?? strategy.strategy_params?.timeframe ?? '1h') === tf;
@@ -514,6 +548,34 @@ export default function StrategiesPage() {
                       </span>
                     </div>
                   )}
+                  {/* P&L row — shown when there are trades for this symbol */}
+                  {(() => {
+                    const sym = strategy.symbol ?? strategy.strategy_params?.symbol ?? 'BTCUSDT';
+                    const pnl = pnlMap[sym];
+                    if (!pnl || pnl.totalTrades === 0) return null;
+                    const winRate = pnl.totalTrades > 0
+                      ? Math.round((pnl.wins / Math.max(pnl.totalTrades - pnl.openCount, 1)) * 100)
+                      : 0;
+                    const isPos = pnl.realizedPnlPct >= 0;
+                    return (
+                      <div className="mt-1.5 flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                        <span className="text-[10px] text-muted-foreground shrink-0">P&amp;L:</span>
+                        <span className={cn(
+                          'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold border',
+                          isPos ? 'border-success/40 bg-success/10 text-success' : 'border-destructive/40 bg-destructive/10 text-destructive'
+                        )}>
+                          {isPos ? <TrendingUp className="h-2.5 w-2.5" /> : <TrendingDown className="h-2.5 w-2.5" />}
+                          {isPos ? '+' : ''}{pnl.realizedPnlPct.toFixed(2)}%
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {pnl.totalTrades} trades · {winRate}% win
+                        </span>
+                        {pnl.openCount > 0 && (
+                          <span className="text-[10px] text-primary">{pnl.openCount} open</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               ))
             )}

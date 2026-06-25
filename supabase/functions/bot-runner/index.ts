@@ -218,6 +218,29 @@ Deno.serve(async (req) => {
             timeframe: tf, reason: result.reason + multiTpNote, status: 'executed',
           });
         }
+
+        // 9. Send notification (fire-and-forget)
+        fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-notification`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          },
+          body: JSON.stringify({
+            userId,
+            signal: result.signal,
+            symbol: params.symbol,
+            price: result.price,
+            reason: result.reason,
+            timeframe: tf,
+            strategyName: strategy.name ?? 'Strategy',
+            sl: result.price * (1 - effectiveSL / 100),
+            tp1: tp1 ? result.price * (1 + tp1 / 100) : null,
+            tp2: tp2 ? result.price * (1 + tp2 / 100) : null,
+            tp3: tp3 ? result.price * (1 + tp3 / 100) : null,
+            mode: useTestnet ? 'testnet' : 'real',
+          }),
+        }).catch(() => {});
       } catch (e) {
         console.error(`[bot-runner] Error on strategy ${strategy.id}: ${(e as Error).message}`);
       }

@@ -101,6 +101,39 @@ export async function getOpenTrades(): Promise<Trade[]> {
   return Array.isArray(data) ? data : [];
 }
 
+// Trades by symbol — for per-strategy P&L
+export async function getTradesBySymbol(symbol: string): Promise<Trade[]> {
+  const { data } = await supabase
+    .from('trades')
+    .select('*')
+    .eq('symbol', symbol)
+    .order('created_at', { ascending: false })
+    .limit(100);
+  return Array.isArray(data) ? data : [];
+}
+
+// All trades for P&L aggregation on StrategiesPage
+export async function getAllTradesSummary(): Promise<{
+  bySymbol: Record<string, { totalTrades: number; wins: number; realizedPnlPct: number; openCount: number }>;
+}> {
+  const { data } = await supabase
+    .from('trades')
+    .select('symbol, status, pnl_pct')
+    .limit(500);
+  const trades = Array.isArray(data) ? data : [];
+  const bySymbol: Record<string, { totalTrades: number; wins: number; realizedPnlPct: number; openCount: number }> = {};
+  for (const t of trades) {
+    if (!bySymbol[t.symbol]) bySymbol[t.symbol] = { totalTrades: 0, wins: 0, realizedPnlPct: 0, openCount: 0 };
+    bySymbol[t.symbol].totalTrades++;
+    if (t.status === 'open') bySymbol[t.symbol].openCount++;
+    if (t.status === 'closed') {
+      if ((t.pnl_pct ?? 0) > 0) bySymbol[t.symbol].wins++;
+      bySymbol[t.symbol].realizedPnlPct += t.pnl_pct ?? 0;
+    }
+  }
+  return { bySymbol };
+}
+
 // =====================
 // MARKET SCANS
 // =====================

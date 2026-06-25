@@ -27,6 +27,11 @@ export interface UserSettings {
   position_size_pct: number;
   max_open_trades: number;
   use_testnet: boolean;
+  telegram_bot_token: string | null;
+  telegram_chat_id: string | null;
+  whatsapp_enabled: boolean;
+  whatsapp_phone: string | null;
+  notifications_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -53,6 +58,7 @@ export interface Strategy {
   ai_interpretation: string | null;
   strategy_params: StrategyParams | null;
   timeframe: string | null;
+  symbol: string | null;
   last_executed_at: string | null;
   last_signal: string | null;
   stop_loss_pct: number | null;

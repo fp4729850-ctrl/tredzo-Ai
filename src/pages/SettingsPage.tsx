@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Eye, EyeOff, Save, Loader2, Key, Shield, Bot, AlertTriangle, Flame } from 'lucide-react';
+import { Eye, EyeOff, Save, Loader2, Key, Shield, Bot, AlertTriangle, Flame, Bell, MessageCircle, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { getUserSettings, upsertUserSettings, callBinanceTrade } from '@/services/api';
 import type { UserSettings } from '@/types/types';
@@ -26,6 +26,11 @@ export default function SettingsPage() {
     take_profit_pct: 4.0,
     position_size_pct: 5.0,
     max_open_trades: 5,
+    telegram_bot_token: '',
+    telegram_chat_id: '',
+    whatsapp_enabled: false,
+    whatsapp_phone: '',
+    notifications_enabled: true,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -285,6 +290,103 @@ export default function SettingsPage() {
                   className="bg-input border-border data-mono"
                 />
                 <p className="text-[10px] text-muted-foreground">Maximum simultaneous open positions</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Notifications — Telegram + WhatsApp */}
+        <Card className="border-border bg-card">
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-balance">
+              <Bell className="h-4 w-4 text-primary" />
+              Notifications
+              <Badge variant="outline" className="ml-auto text-[10px] border-primary/30 text-primary">Alerts</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-4">
+            {/* Master toggle */}
+            <div className="flex items-center justify-between rounded border border-border bg-muted/20 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Enable Notifications</p>
+                <p className="text-xs text-muted-foreground">Receive BUY/SELL alerts on every bot signal</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge variant="outline" className={cn('text-[10px]',
+                  settings.notifications_enabled ? 'border-success/40 text-success' : 'border-border text-muted-foreground'
+                )}>
+                  {settings.notifications_enabled ? 'ON' : 'OFF'}
+                </Badge>
+                <Switch
+                  checked={settings.notifications_enabled ?? true}
+                  onCheckedChange={v => set('notifications_enabled', v)}
+                />
+              </div>
+            </div>
+
+            {/* Telegram */}
+            <div className="space-y-3 rounded border border-border bg-muted/10 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Send className="h-3.5 w-3.5 text-primary" />
+                <span className="text-sm font-medium text-foreground">Telegram Bot</span>
+                <Badge variant="outline" className="text-[10px] border-primary/30 text-primary ml-auto">Free</Badge>
+              </div>
+              <div className="rounded border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] text-muted-foreground space-y-1">
+                <p><strong className="text-foreground">Setup (3 steps):</strong></p>
+                <p>1. Open Telegram → search <strong className="text-foreground">@BotFather</strong> → send <code className="bg-muted px-1 rounded">/newbot</code></p>
+                <p>2. Copy the <strong className="text-foreground">Bot Token</strong> (looks like <code className="bg-muted px-1 rounded">123456:ABC-xyz...</code>)</p>
+                <p>3. Message your bot once, then open <strong className="text-foreground">@userinfobot</strong> to get your <strong className="text-foreground">Chat ID</strong></p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-normal">Bot Token</Label>
+                  <Input
+                    type="password"
+                    placeholder="123456789:ABCdefGHI..."
+                    value={settings.telegram_bot_token ?? ''}
+                    onChange={e => set('telegram_bot_token', e.target.value)}
+                    className="bg-input border-border font-mono text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-normal">Chat ID</Label>
+                  <Input
+                    placeholder="e.g. 987654321"
+                    value={settings.telegram_chat_id ?? ''}
+                    onChange={e => set('telegram_chat_id', e.target.value)}
+                    className="bg-input border-border font-mono text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* WhatsApp */}
+            <div className="space-y-3 rounded border border-border bg-muted/10 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <MessageCircle className="h-3.5 w-3.5 text-success" />
+                <span className="text-sm font-medium text-foreground">WhatsApp Alerts</span>
+                <Badge variant="outline" className="text-[10px] border-success/30 text-success ml-auto">via CallMeBot</Badge>
+                <Switch
+                  checked={settings.whatsapp_enabled ?? false}
+                  onCheckedChange={v => set('whatsapp_enabled', v)}
+                />
+              </div>
+              <div className="rounded border border-success/20 bg-success/5 px-3 py-2 text-[11px] text-muted-foreground space-y-1">
+                <p><strong className="text-foreground">Setup (free, 2 steps):</strong></p>
+                <p>1. Add <strong className="text-foreground">+34 644 66 08 93</strong> to WhatsApp contacts</p>
+                <p>2. Send this message to that number: <code className="bg-muted px-1 rounded">I allow callmebot to send me messages</code></p>
+                <p>You'll receive your API key via WhatsApp within a minute.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-normal">Your WhatsApp Phone Number</Label>
+                <Input
+                  placeholder="+919876543210 (with country code)"
+                  value={settings.whatsapp_phone ?? ''}
+                  onChange={e => set('whatsapp_phone', e.target.value)}
+                  disabled={!settings.whatsapp_enabled}
+                  className="bg-input border-border font-mono text-sm"
+                />
+                <p className="text-[10px] text-muted-foreground">Include country code, e.g. +91 for India</p>
               </div>
             </div>
           </CardContent>
