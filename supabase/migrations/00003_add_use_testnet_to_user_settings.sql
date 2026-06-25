@@ -1,0 +1,1 @@
+ALTER TABLE user_settings ADD COLUMN use_testnet BOOLEAN NOT NULL DEFAULT true;

@@ -1,0 +1,234 @@
+/* stylelint-disable */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Trading Bot System — Dark Fintech Terminal Design */
+
+@layer base {
+  :root {
+    --radius: 0.125rem;
+
+    /* Light mode (fallback — app defaults to dark) */
+    --background: 220 15% 8%;
+    --foreground: 210 20% 92%;
+    --card: 220 15% 11%;
+    --card-foreground: 210 20% 92%;
+    --popover: 220 15% 11%;
+    --popover-foreground: 210 20% 92%;
+
+    /* Electric Cyan as primary */
+    --primary: 191 100% 50%;
+    --primary-foreground: 220 15% 8%;
+
+    --secondary: 220 15% 16%;
+    --secondary-foreground: 210 20% 80%;
+
+    --muted: 220 12% 15%;
+    --muted-foreground: 215 12% 50%;
+
+    --accent: 220 12% 18%;
+    --accent-foreground: 210 20% 85%;
+
+    --destructive: 10 90% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 12% 20%;
+    --input: 220 12% 16%;
+    --ring: 191 100% 50%;
+
+    /* Status colors */
+    --success: 145 80% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 95% 55%;
+    --warning-foreground: 220 15% 8%;
+    --info: 210 90% 55%;
+    --info-foreground: 0 0% 100%;
+    --error: 10 90% 55%;
+    --error-foreground: 0 0% 100%;
+
+    /* Signal colors */
+    --signal-buy: 145 80% 42%;
+    --signal-sell: 10 90% 55%;
+    --signal-buy-bg: 145 80% 42% / 0.08;
+    --signal-sell-bg: 10 90% 55% / 0.08;
+
+    /* Charts */
+    --chart-1: 191 100% 50%;
+    --chart-2: 145 80% 42%;
+    --chart-3: 10 90% 55%;
+    --chart-4: 38 95% 55%;
+    --chart-5: 270 70% 60%;
+
+    /* Sidebar */
+    --sidebar-background: 220 18% 7%;
+    --sidebar-foreground: 210 15% 75%;
+    --sidebar-primary: 191 100% 50%;
+    --sidebar-primary-foreground: 220 15% 8%;
+    --sidebar-accent: 220 12% 14%;
+    --sidebar-accent-foreground: 210 20% 90%;
+    --sidebar-border: 220 12% 14%;
+    --sidebar-ring: 191 100% 50%;
+
+    /* Education aliases */
+    --education-blue: 191 100% 50%;
+    --education-green: 145 80% 42%;
+
+    /* Shadows */
+    --shadow-card: 0 1px 3px 0 hsl(220 15% 4% / 0.6);
+    --shadow-hover: 0 0 16px 0 hsl(191 100% 50% / 0.15);
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(191 100% 50% / 0.15), hsl(191 100% 50% / 0.05));
+    --gradient-card: linear-gradient(180deg, hsl(220 15% 12%), hsl(220 15% 10%));
+    --gradient-background: linear-gradient(180deg, hsl(220 15% 8%), hsl(220 18% 6%));
+  }
+
+  .dark {
+    --background: 220 15% 8%;
+    --foreground: 210 20% 92%;
+    --card: 220 15% 11%;
+    --card-foreground: 210 20% 92%;
+    --popover: 220 15% 11%;
+    --popover-foreground: 210 20% 92%;
+    --primary: 191 100% 50%;
+    --primary-foreground: 220 15% 8%;
+    --secondary: 220 15% 16%;
+    --secondary-foreground: 210 20% 80%;
+    --muted: 220 12% 15%;
+    --muted-foreground: 215 12% 50%;
+    --accent: 220 12% 18%;
+    --accent-foreground: 210 20% 85%;
+    --destructive: 10 90% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 12% 20%;
+    --input: 220 12% 16%;
+    --ring: 191 100% 50%;
+    --success: 145 80% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 95% 55%;
+    --warning-foreground: 220 15% 8%;
+    --info: 210 90% 55%;
+    --info-foreground: 0 0% 100%;
+    --error: 10 90% 55%;
+    --error-foreground: 0 0% 100%;
+    --signal-buy: 145 80% 42%;
+    --signal-sell: 10 90% 55%;
+    --chart-1: 191 100% 50%;
+    --chart-2: 145 80% 42%;
+    --chart-3: 10 90% 55%;
+    --chart-4: 38 95% 55%;
+    --chart-5: 270 70% 60%;
+    --sidebar-background: 220 18% 7%;
+    --sidebar-foreground: 210 15% 75%;
+    --sidebar-primary: 191 100% 50%;
+    --sidebar-primary-foreground: 220 15% 8%;
+    --sidebar-accent: 220 12% 14%;
+    --sidebar-accent-foreground: 210 20% 90%;
+    --sidebar-border: 220 12% 14%;
+    --sidebar-ring: 191 100% 50%;
+    --education-blue: 191 100% 50%;
+    --education-green: 145 80% 42%;
+    --shadow-card: 0 1px 3px 0 hsl(220 15% 4% / 0.6);
+    --shadow-hover: 0 0 16px 0 hsl(191 100% 50% / 0.15);
+    --gradient-primary: linear-gradient(135deg, hsl(191 100% 50% / 0.15), hsl(191 100% 50% / 0.05));
+    --gradient-card: linear-gradient(180deg, hsl(220 15% 12%), hsl(220 15% 10%));
+    --gradient-background: linear-gradient(180deg, hsl(220 15% 8%), hsl(220 18% 6%));
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply dark;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+
+  /* Scrollbar styling */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+}
+
+@layer utilities {
+  /* Signal flash animation for price updates */
+  .flash-green {
+    animation: flash-green 0.3s ease-out;
+  }
+  .flash-red {
+    animation: flash-red 0.3s ease-out;
+  }
+  @keyframes flash-green {
+    0% { background-color: hsl(145 80% 42% / 0.2); }
+    100% { background-color: transparent; }
+  }
+  @keyframes flash-red {
+    0% { background-color: hsl(10 90% 55% / 0.2); }
+    100% { background-color: transparent; }
+  }
+
+  /* Scanning pulse for active bot */
+  .scan-pulse {
+    animation: scan-pulse 2s ease-in-out infinite;
+  }
+  @keyframes scan-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Cyan glow for active elements */
+  .glow-cyan {
+    box-shadow: 0 0 12px hsl(191 100% 50% / 0.3);
+  }
+
+  /* Text gradient */
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(191 100% 50%), hsl(191 100% 70%));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Signal badge colors */
+  .signal-buy {
+    color: hsl(var(--signal-buy));
+    background-color: hsl(145 80% 42% / 0.12);
+    border-color: hsl(145 80% 42% / 0.3);
+  }
+  .signal-sell {
+    color: hsl(var(--signal-sell));
+    background-color: hsl(10 90% 55% / 0.12);
+    border-color: hsl(10 90% 55% / 0.3);
+  }
+
+  /* Monospace data display */
+  .data-mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+}

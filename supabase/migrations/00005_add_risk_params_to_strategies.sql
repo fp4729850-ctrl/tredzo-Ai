@@ -1,0 +1,4 @@
+ALTER TABLE strategies
+  ADD COLUMN stop_loss_pct   NUMERIC(6,2) DEFAULT NULL,
+  ADD COLUMN take_profit_pct NUMERIC(6,2) DEFAULT NULL,
+  ADD COLUMN position_size_pct NUMERIC(6,2) DEFAULT NULL;

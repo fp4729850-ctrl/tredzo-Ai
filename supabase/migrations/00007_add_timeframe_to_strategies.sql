@@ -1,0 +1,1 @@
+ALTER TABLE strategies ADD COLUMN timeframe VARCHAR(10) DEFAULT '1h';

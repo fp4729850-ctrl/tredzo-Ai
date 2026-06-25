@@ -1,0 +1,7 @@
+ALTER TABLE strategies
+  ADD COLUMN tp1_pct          NUMERIC(6,2) DEFAULT NULL,
+  ADD COLUMN tp2_pct          NUMERIC(6,2) DEFAULT NULL,
+  ADD COLUMN tp3_pct          NUMERIC(6,2) DEFAULT NULL,
+  ADD COLUMN tp1_size_pct     NUMERIC(6,2) DEFAULT NULL,
+  ADD COLUMN tp2_size_pct     NUMERIC(6,2) DEFAULT NULL,
+  ADD COLUMN tp3_size_pct     NUMERIC(6,2) DEFAULT NULL;
