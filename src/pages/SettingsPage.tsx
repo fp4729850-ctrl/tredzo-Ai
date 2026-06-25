@@ -30,6 +30,7 @@ export default function SettingsPage() {
     telegram_chat_id: '',
     whatsapp_enabled: false,
     whatsapp_phone: '',
+    whatsapp_api_key: '',
     notifications_enabled: true,
   });
   const [loading, setLoading] = useState(true);
@@ -387,6 +388,18 @@ export default function SettingsPage() {
                   className="bg-input border-border font-mono text-sm"
                 />
                 <p className="text-[10px] text-muted-foreground">Include country code, e.g. +91 for India</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-normal">WhatsApp API Key</Label>
+                <Input
+                  type="password"
+                  placeholder="Enter API Key received from CallMeBot"
+                  value={settings.whatsapp_api_key ?? ''}
+                  onChange={e => set('whatsapp_api_key', e.target.value)}
+                  disabled={!settings.whatsapp_enabled}
+                  className="bg-input border-border font-mono text-sm"
+                />
+                <p className="text-[10px] text-muted-foreground">Enter the API key sent to you by the bot</p>
               </div>
             </div>
           </CardContent>

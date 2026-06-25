@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
   const client = sb();
   const { data: settings } = await client
     .from('user_settings')
-    .select('telegram_bot_token, telegram_chat_id, notifications_enabled, whatsapp_enabled, whatsapp_phone')
+    .select('telegram_bot_token, telegram_chat_id, notifications_enabled, whatsapp_enabled, whatsapp_phone, whatsapp_api_key')
     .eq('user_id', payload.userId)
     .maybeSingle();
 
@@ -101,12 +101,12 @@ Deno.serve(async (req) => {
   }
 
   // ── WhatsApp (via CallMeBot free API — user sets phone) ──
-  if (settings.whatsapp_enabled && settings.whatsapp_phone) {
+  if (settings.whatsapp_enabled && settings.whatsapp_phone && settings.whatsapp_api_key) {
     try {
       const emoji = payload.signal === 'BUY' ? '🟢' : '🔴';
       const text = `${emoji} ${payload.signal} ${payload.symbol} @ $${payload.price} | TF:${payload.timeframe} | ${payload.strategyName} | ${payload.mode.toUpperCase()}`;
       const encoded = encodeURIComponent(text);
-      const url = `https://api.callmebot.com/whatsapp.php?phone=${settings.whatsapp_phone}&text=${encoded}&apikey=get_from_callmebot`;
+      const url = `https://api.callmebot.com/whatsapp.php?phone=${settings.whatsapp_phone}&text=${encoded}&apikey=${settings.whatsapp_api_key}`;
       const res = await fetch(url, { signal: AbortSignal.timeout(8_000) });
       results.whatsapp = res.ok ? 'sent' : `failed: ${res.status}`;
     } catch (e) {

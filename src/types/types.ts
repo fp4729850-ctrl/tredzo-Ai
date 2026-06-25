@@ -31,6 +31,7 @@ export interface UserSettings {
   telegram_chat_id: string | null;
   whatsapp_enabled: boolean;
   whatsapp_phone: string | null;
+  whatsapp_api_key: string | null;
   notifications_enabled: boolean;
   created_at: string;
   updated_at: string;
