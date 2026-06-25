@@ -260,10 +260,25 @@ export default function StrategiesPage() {
 
   const handleSymbolChange = async (strategy: Strategy, sym: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setStrategies(prev => prev.map(s => s.id === strategy.id ? { ...s, symbol: sym } : s));
-    if (selectedStrategy?.id === strategy.id) setSelectedStrategy(s => s ? { ...s, symbol: sym } : s);
-    await updateStrategy(strategy.id, { symbol: sym } as Partial<Strategy>);
-    toast.success(`Symbol set to ${sym}`, { icon: '📈', duration: 2000 });
+    // Multi-select: toggle sym in/out of the symbols array
+    const current = strategy.symbols ?? [strategy.symbol ?? strategy.strategy_params?.symbol ?? 'BTCUSDT'];
+    const next = current.includes(sym)
+      ? current.filter(s => s !== sym).length > 0
+        ? current.filter(s => s !== sym)
+        : current                      // keep at least one
+      : [...current, sym];
+    // primary symbol = first in array
+    const primary = next[0];
+    setStrategies(prev => prev.map(s => s.id === strategy.id ? { ...s, symbols: next, symbol: primary } : s));
+    if (selectedStrategy?.id === strategy.id)
+      setSelectedStrategy(s => s ? { ...s, symbols: next, symbol: primary } : s);
+    await updateStrategy(strategy.id, { symbols: next, symbol: primary } as Partial<Strategy>);
+    toast.success(
+      next.length > 1
+        ? `Active symbols: ${next.map(s => s.replace('USDT','')).join(', ')}`
+        : `Symbol set to ${primary}`,
+      { icon: '📈', duration: 2500 }
+    );
   };
 
   // ── Bot status helpers ──
@@ -471,19 +486,20 @@ export default function StrategiesPage() {
                       <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
-                  {/* Symbol picker */}
+                  {/* Symbol picker — multi-select */}
                   <div className="mt-2 flex items-center gap-1 flex-wrap" onClick={e => e.stopPropagation()}>
                     <span className="text-[10px] text-muted-foreground shrink-0">Symbol:</span>
                     {(['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT'] as const).map(sym => {
                       const label = sym.replace('USDT','');
-                      const activeSym = (strategy.symbol ?? strategy.strategy_params?.symbol ?? 'BTCUSDT') === sym;
+                      const activeSyms = strategy.symbols ?? [strategy.symbol ?? strategy.strategy_params?.symbol ?? 'BTCUSDT'];
+                      const isActive = activeSyms.includes(sym);
                       return (
                         <button
                           key={sym}
                           onClick={e => handleSymbolChange(strategy, sym, e)}
                           className={cn(
                             'h-5 rounded px-1.5 text-[10px] font-mono font-medium transition-all border',
-                            activeSym
+                            isActive
                               ? 'bg-primary border-primary text-primary-foreground'
                               : 'bg-transparent border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
                           )}
@@ -492,6 +508,13 @@ export default function StrategiesPage() {
                         </button>
                       );
                     })}
+                    {/* count badge when >1 active */}
+                    {(() => {
+                      const cnt = (strategy.symbols ?? [strategy.symbol ?? 'BTCUSDT']).length;
+                      return cnt > 1 ? (
+                        <span className="ml-1 text-[10px] text-primary font-medium">{cnt} active</span>
+                      ) : null;
+                    })()}
                   </div>
                   {/* Timeframe picker */}
                   <div className="mt-1.5 flex items-center gap-1 flex-wrap" onClick={e => e.stopPropagation()}>
@@ -602,20 +625,25 @@ export default function StrategiesPage() {
                   {/* Strategy Params Panel */}
                   {selectedStrategy.strategy_params && (() => {
                     const p = selectedStrategy.strategy_params as StrategyParams;
+                    // User-selected overrides take priority over AI-extracted values
+                    const displaySymbol = selectedStrategy.symbol ?? p.symbol;
+                    const displayTF = selectedStrategy.timeframe ?? p.timeframe;
+                    const activeSymbols = selectedStrategy.symbols ?? [displaySymbol];
                     return (
                       <div className="rounded border border-border bg-muted/20 p-3 space-y-2">
                         <div className="flex items-center gap-1.5 mb-2">
                           <Activity className="h-3.5 w-3.5 text-primary" />
                           <span className="text-xs font-medium text-foreground">Strategy Parameters</span>
+                          <Badge variant="outline" className="ml-auto text-[10px] border-primary/30 text-primary">Live Config</Badge>
                         </div>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-muted-foreground">Symbol</span>
-                            <Badge variant="outline" className="text-[10px] border-primary/40 text-primary font-mono">{p.symbol}</Badge>
+                            <Badge variant="outline" className="text-[10px] border-primary/40 text-primary font-mono">{displaySymbol}</Badge>
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-muted-foreground">Timeframe</span>
-                            <Badge variant="outline" className="text-[10px] border-border font-mono">{p.timeframe}</Badge>
+                            <Badge variant="outline" className="text-[10px] border-primary/40 text-primary font-mono">{displayTF}</Badge>
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-muted-foreground">RSI Length</span>
@@ -646,7 +674,20 @@ export default function StrategiesPage() {
                             <span className="font-mono font-medium text-foreground">{p.ema_slow}</span>
                           </div>
                         </div>
-                  {/* SL/TP badges */}
+                        {/* Active symbols list — shows all selected */}
+                        {activeSymbols.length > 0 && (
+                          <div className="pt-2 border-t border-border/50 space-y-1.5">
+                            <span className="text-[10px] text-muted-foreground">Active Symbols ({activeSymbols.length})</span>
+                            <div className="flex flex-wrap gap-1">
+                              {activeSymbols.map(s => (
+                                <Badge key={s} variant="outline" className="text-[10px] border-primary/40 bg-primary/5 text-primary font-mono">
+                                  {s}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {/* SL/TP badges */}
                         <div className="flex items-center gap-2 pt-1 border-t border-border/50">
                           <span className={cn('text-[10px] flex items-center gap-1', p.has_stop_loss ? 'text-success' : 'text-muted-foreground/50')}>
                             {p.has_stop_loss ? '✓' : '✗'} Stop Loss

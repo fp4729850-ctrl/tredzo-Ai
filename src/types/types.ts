@@ -59,6 +59,7 @@ export interface Strategy {
   strategy_params: StrategyParams | null;
   timeframe: string | null;
   symbol: string | null;
+  symbols: string[] | null;
   last_executed_at: string | null;
   last_signal: string | null;
   stop_loss_pct: number | null;
