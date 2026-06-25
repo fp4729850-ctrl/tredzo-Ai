@@ -71,7 +71,7 @@ export default function LoginPage() {
             <Bot className="h-7 w-7 text-primary" />
           </div>
           <div className="text-center">
-            <h1 className="text-xl font-bold text-foreground text-balance">AutoTradeBot</h1>
+            <h1 className="text-xl font-bold text-foreground text-balance">Tredzo AI</h1>
             <p className="mt-0.5 text-sm text-muted-foreground">AI-Powered Crypto Trading System</p>
           </div>
         </div>
@@ -171,7 +171,7 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-6 text-center text-xs text-muted-foreground/50">
-          © 2026 AutoTradeBot · Crypto trading involves risk
+          © 2026 Tredzo AI · Crypto trading involves risk
         </p>
       </div>
     </div>

@@ -40,8 +40,8 @@ const SidebarNav: React.FC<SidebarNavProps> = ({ onClose }) => {
           <Bot className="h-4 w-4 text-primary-foreground" />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-sidebar-accent-foreground">AutoTradeBot</p>
-          <p className="text-xs text-muted-foreground">AI Trading System</p>
+          <p className="truncate text-sm font-semibold text-sidebar-accent-foreground">Tredzo AI</p>
+          <p className="text-xs text-muted-foreground">Tredzo AI Platform</p>
         </div>
       </div>
 
@@ -140,7 +140,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
           </Button>
           <div className="flex items-center gap-2 min-w-0">
             <Zap className="h-4 w-4 shrink-0 text-primary" />
-            <span className="truncate text-sm font-semibold">AutoTradeBot</span>
+            <span className="truncate text-sm font-semibold">Tredzo AI</span>
           </div>
         </header>
 
