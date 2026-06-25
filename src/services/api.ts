@@ -35,6 +35,25 @@ export async function getStrategies(): Promise<Strategy[]> {
   return Array.isArray(data) ? data : [];
 }
 
+// Admin only: fetch all strategies from all users with profile join
+export async function getAllStrategiesAdmin(): Promise<(Strategy & { profile_email: string | null; profile_username: string | null })[]> {
+  const { data } = await supabase
+    .from('strategies')
+    .select('*, profiles!strategies_user_id_fkey(email, username)')
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (!Array.isArray(data)) return [];
+  return data.map((row) => {
+    const p = row.profiles as { email?: string | null; username?: string | null } | null;
+    return {
+      ...row,
+      profiles: undefined,
+      profile_email: p?.email ?? null,
+      profile_username: p?.username ?? null,
+    };
+  });
+}
+
 export async function createStrategy(strategy: {
   name: string;
   description?: string;

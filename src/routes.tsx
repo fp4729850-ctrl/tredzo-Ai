@@ -6,6 +6,7 @@ import StrategiesPage from './pages/StrategiesPage';
 import SettingsPage from './pages/SettingsPage';
 import TradeHistoryPage from './pages/TradeHistoryPage';
 import BacktestPage from './pages/BacktestPage';
+import AdminPage from './pages/AdminPage';
 
 export interface RouteConfig {
   name: string;
@@ -23,6 +24,7 @@ export const routes: RouteConfig[] = [
   { name: 'Trade History', path: '/history', element: <TradeHistoryPage /> },
   { name: 'Backtesting', path: '/backtest', element: <BacktestPage /> },
   { name: 'Settings', path: '/settings', element: <SettingsPage /> },
+  { name: 'Admin', path: '/admin', element: <AdminPage /> },
   { name: 'Login', path: '/login', element: <LoginPage />, public: true },
   { name: 'Register', path: '/register', element: <LoginPage />, public: true },
 ];

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, ScanLine, Code2, Settings, History,
-  Bot, LogOut, Menu, ChevronRight, Zap, FlaskConical
+  Bot, LogOut, Menu, ChevronRight, Zap, FlaskConical, ShieldCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -80,6 +80,32 @@ const SidebarNav: React.FC<SidebarNavProps> = ({ onClose }) => {
             )}
           </NavLink>
         ))}
+        {/* Admin-only link */}
+        {profile?.role === 'admin' && (
+          <NavLink
+            to="/admin"
+            onClick={onClose}
+            className={({ isActive }) =>
+              cn(
+                'group flex min-h-10 items-center gap-3 rounded px-3 py-2 text-sm transition-colors duration-150',
+                isActive
+                  ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                  : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+              )
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <ShieldCheck className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary' : 'text-warning')} />
+                <span className="flex-1 truncate">Admin Panel</span>
+                {isActive
+                  ? <ChevronRight className="h-3 w-3 shrink-0 text-primary" />
+                  : <Badge variant="outline" className="text-[9px] border-warning/40 text-warning py-0 px-1">ADMIN</Badge>
+                }
+              </>
+            )}
+          </NavLink>
+        )}
       </nav>
 
       {/* User Info + Sign Out */}
