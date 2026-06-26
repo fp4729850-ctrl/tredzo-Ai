@@ -12,7 +12,7 @@ interface StrategyParams {
   ema_fast: number;
   ema_slow: number;
   symbol: string;
-  timeframe: string;
+  timeframe: string | null;
   has_stop_loss: boolean;
   has_take_profit: boolean;
   trade_direction: 'long' | 'short' | 'both';
@@ -103,7 +103,7 @@ function extractParams(code: string): StrategyParams {
     /\/\/\s*(?:timeframe|tf|interval)[:\s]+["']?(\d+[mhd])["']?/i,        // comment: // TF: 15m
   ];
   const VALID_TF = new Set(['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','1w']);
-  let timeframe = '1h'; // default
+  let timeframe: string | null = null; // default null
   for (const pat of tfPatterns) {
     const m = code.match(pat);
     if (m) {
