@@ -11,18 +11,16 @@ import { supabase } from '@/db/supabase';
 export default function LoginPage() {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const email = `${username}@miaoda.com`;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim()) return toast.error('Username is required');
-    if (!/^[a-zA-Z0-9_]+$/.test(username)) return toast.error('Username: only letters, digits, underscore');
+    if (!email.trim()) return toast.error('Email is required');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return toast.error('Please enter a valid email address');
     if (password.length < 6) return toast.error('Password must be at least 6 characters');
     if (!isLogin && !agreed) return toast.error('Please accept the User Agreement and Privacy Policy');
 
@@ -36,8 +34,9 @@ export default function LoginPage() {
       } else {
         const { data: signUpData, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        // Save username into the profiles table after signup
+        // Save email into the profiles table after signup
         if (signUpData.user) {
+          const username = email.split('@')[0];
           await supabase
             .from('profiles')
             .upsert({ id: signUpData.user.id, username, email, updated_at: new Date().toISOString() });
@@ -98,13 +97,13 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="username" className="text-sm font-normal">Username</Label>
+              <Label htmlFor="email" className="text-sm font-normal">Email Address</Label>
               <Input
-                id="username"
-                placeholder="Enter username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
+                id="email"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
                 className="bg-input border-border text-base"
               />
             </div>
