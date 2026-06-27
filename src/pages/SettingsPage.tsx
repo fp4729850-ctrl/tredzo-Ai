@@ -39,6 +39,12 @@ export default function SettingsPage() {
   const [showSecret, setShowSecret] = useState(false);
   const [testingApi, setTestingApi] = useState(false);
 
+  // Manual test trade state
+  const [manualSymbol, setManualSymbol] = useState('DOGEUSDT');
+  const [manualQty, setManualQty] = useState('50');
+  const [manualLoading, setManualLoading] = useState(false);
+  const [manualResult, setManualResult] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     const data = await getUserSettings();
     if (data) setSettings(data);
@@ -76,6 +82,37 @@ export default function SettingsPage() {
         `Connected! Mode: ${d.mode ?? configuredMode} | Trading: ${configuredType.toUpperCase()}`,
         { icon: '✅' }
       );
+    }
+  };
+
+  const handleManualTrade = async (side: 'BUY' | 'SELL') => {
+    if (!settings.binance_api_key || !settings.binance_api_secret) {
+      return toast.error('Enter API key and secret first');
+    }
+    if (!manualSymbol) return toast.error('Symbol is required');
+    if (!manualQty || parseFloat(manualQty) <= 0) return toast.error('Quantity must be greater than 0');
+
+    setManualLoading(true);
+    setManualResult(null);
+
+    const payload = {
+      action: 'create-order' as const,
+      testnet: settings.use_testnet ?? true,
+      tradingMode: (settings.trading_mode ?? 'spot') as 'spot' | 'futures',
+      symbol: manualSymbol.toUpperCase(),
+      side,
+      type: 'MARKET' as const,
+      quantity: parseFloat(manualQty),
+    };
+
+    const { data, error } = await callBinanceTrade(payload);
+    setManualLoading(false);
+    if (error) {
+      toast.error(`Order failed: ${error}`);
+      setManualResult(`❌ Error: ${error}`);
+    } else {
+      toast.success(`${side} order executed!`, { icon: '🚀' });
+      setManualResult(JSON.stringify(data, null, 2));
     }
   };
 
@@ -229,6 +266,83 @@ export default function SettingsPage() {
                 </SelectContent>
               </Select>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Manual Test Trade */}
+        <Card className="border-border bg-card">
+          <CardHeader className="pb-3 pt-4 px-4">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-balance">
+              <Flame className="h-4 w-4 text-warning animate-pulse" />
+              🧪 Manual Test Trade (Real or Testnet)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-4">
+            <div className="rounded border border-primary/20 bg-primary/5 px-3 py-2">
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Fire a manual trade to test your Binance API permissions directly.
+                Uses the current mode (<strong className="text-foreground">{settings.use_testnet ? 'TESTNET' : 'REAL'}</strong>)
+                and trading mode (<strong className="text-foreground">{(settings.trading_mode ?? 'spot').toUpperCase()}</strong>) selected above.
+              </p>
+            </div>
+
+            <div className="grid gap-3 grid-cols-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Symbol</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. DOGEUSDT"
+                  value={manualSymbol}
+                  onChange={e => setManualSymbol(e.target.value)}
+                  className="h-8 bg-input border-border font-mono text-xs uppercase"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Quantity (in Coins)</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 50"
+                  value={manualQty}
+                  onChange={e => setManualQty(e.target.value)}
+                  className="h-8 bg-input border-border font-mono text-xs"
+                />
+                <span className="text-[9px] text-muted-foreground">
+                  (DOGE price ~$0.12, so 50 DOGE ≈ 6 USDT)
+                </span>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => handleManualTrade('BUY')}
+                disabled={manualLoading}
+                className="flex-1 bg-success hover:bg-success/90 text-white h-8 text-xs font-semibold"
+              >
+                {manualLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                🟢 BUY / LONG
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => handleManualTrade('SELL')}
+                disabled={manualLoading}
+                className="flex-1 bg-destructive hover:bg-destructive/90 text-white h-8 text-xs font-semibold"
+              >
+                {manualLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                🔴 SELL / SHORT
+              </Button>
+            </div>
+
+            {manualResult && (
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">Execution Result</Label>
+                <pre className="max-h-40 overflow-y-auto rounded bg-muted/80 p-2 font-mono text-[10px] text-foreground border border-border">
+                  {manualResult}
+                </pre>
+              </div>
+            )}
           </CardContent>
         </Card>
 
