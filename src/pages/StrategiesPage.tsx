@@ -280,10 +280,10 @@ export default function StrategiesPage() {
     if (cfg) {
       setChartRiskConfig(cfg);
       // Re-analyze silently if strategy_type missing (old format from pre-v46 analysis)
-      if (!p?.strategy_type && s.pinescript_code) {
+      if (!p?.strategy_type && s.pinescript_code && !s.ai_interpretation) {
         runAnalyze(s, false);
       }
-    } else if (s.pinescript_code) {
+    } else if (s.pinescript_code && !s.ai_interpretation) {
       // Strategy not analyzed yet — run silently so signals appear automatically
       runAnalyze(s, false);
     }
