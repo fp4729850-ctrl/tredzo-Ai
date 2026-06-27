@@ -1,0 +1,1 @@
+ALTER TABLE strategies ADD COLUMN IF NOT EXISTS trade_amount_usdt NUMERIC DEFAULT NULL;

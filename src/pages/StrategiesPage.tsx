@@ -14,7 +14,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
 } from '@/components/ui/alert-dialog';
-import { Code2, Plus, Play, Pause, Trash2, Bot, Loader2, Sparkles, Zap, TrendingUp, TrendingDown, Activity, ShieldAlert, Save, Clock } from 'lucide-react';
+import { Code2, Plus, Play, Pause, Trash2, Bot, Loader2, Sparkles, Zap, TrendingUp, TrendingDown, Activity, ShieldAlert, Save, Clock, BarChart2 } from 'lucide-react';
+import { StrategyLiveChart, type StrategyRiskConfig } from '@/components/charts/StrategyLiveChart';
 import { toast } from 'sonner';
 import { getStrategies, createStrategy, updateStrategy, deleteStrategy, executeStrategy, getAllTradesSummary } from '@/services/api';
 import { supabase } from '@/db/supabase';
@@ -73,15 +74,19 @@ export default function StrategiesPage() {
     stop_loss_pct: string; take_profit_pct: string; position_size_pct: string;
     tp1_pct: string; tp2_pct: string; tp3_pct: string;
     tp1_size_pct: string; tp2_size_pct: string; tp3_size_pct: string;
+    trade_amount_usdt: string;
   }>({
     stop_loss_pct: '', take_profit_pct: '', position_size_pct: '',
     tp1_pct: '', tp2_pct: '', tp3_pct: '',
     tp1_size_pct: '', tp2_size_pct: '', tp3_size_pct: '',
+    trade_amount_usdt: '',
   });
   const [savingRisk, setSavingRisk] = useState(false);
   const [justAnalyzedId, setJustAnalyzedId] = useState<string | null>(null);
   const riskPanelRef = useRef<HTMLDivElement>(null);
   const [pnlMap, setPnlMap] = useState<Record<string, { totalTrades: number; wins: number; realizedPnlPct: number; openCount: number }>>({});
+  // Chart overlay: populated after Save Risk Settings
+  const [chartRiskConfig, setChartRiskConfig] = useState<StrategyRiskConfig | null>(null);
 
   const load = useCallback(async () => {
     const [data, summary] = await Promise.all([
@@ -155,11 +160,14 @@ export default function StrategiesPage() {
       tp1_size_pct: s.tp1_size_pct != null ? String(s.tp1_size_pct) : '',
       tp2_size_pct: s.tp2_size_pct != null ? String(s.tp2_size_pct) : '',
       tp3_size_pct: s.tp3_size_pct != null ? String(s.tp3_size_pct) : '',
+      trade_amount_usdt: s.trade_amount_usdt != null ? String(s.trade_amount_usdt) : '',
     });
   }, []);
 
   const runAnalyze = async (strategy: Strategy, showToast = true) => {
     setInterpreting(strategy.id);
+    // Preserve the user's manually selected timeframe before analysis
+    const userTimeframe = strategy.timeframe ?? null;
     const { data, error } = await supabase.functions.invoke('analyze-pinescript', {
       body: { strategyId: strategy.id, code: strategy.pinescript_code },
       method: 'POST',
@@ -183,7 +191,8 @@ export default function StrategiesPage() {
         // Rich toast showing every extracted setting
         const risk = data?.risk as { tp1_pct?: number; tp2_pct?: number; tp3_pct?: number; stop_loss_pct?: number } | undefined;
         const params = fresh.strategy_params as { timeframe?: string; symbol?: string; rsi_length?: number; trade_direction?: string } | null;
-        const tf = fresh.timeframe ?? params?.timeframe ?? '1h';
+        // Show user's preserved timeframe (not AI-extracted, which may differ)
+        const tf = fresh.timeframe ?? userTimeframe ?? params?.timeframe ?? '1h';
         const lines: string[] = [];
         lines.push(`⏱️ Timeframe auto-set: ${tf.toUpperCase()}`);
         if (params?.symbol)         lines.push(`📈 Symbol: ${params.symbol}`);
@@ -208,19 +217,56 @@ export default function StrategiesPage() {
       if (selectedStrategy?.id === strategy.id || !showToast) {
         handleSelectStrategy(fresh);
       }
-      // Scroll Risk Settings into view
-      setTimeout(() => riskPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 400);
     }
     setInterpreting(null);
   };
 
   const handleAIInterpret = (strategy: Strategy) => runAnalyze(strategy, true);
 
+  // ── Helper: build chartRiskConfig from a strategy object ──────────────────
+  const buildRiskConfig = useCallback((s: Strategy): StrategyRiskConfig | null => {
+    const p = s.strategy_params as StrategyParams | null;
+    if (!p) return null;
+    const n = (v: string | number | null | undefined) =>
+      v != null && v !== '' ? parseFloat(String(v)) : null;
+    return {
+      strategy_type:         p.strategy_type   ?? 'rsi_ema',
+      rsi_length:            p.rsi_length       ?? 14,
+      overbought:            p.overbought        ?? 70,
+      oversold:              p.oversold          ?? 30,
+      ema_fast:              p.ema_fast          ?? 20,
+      ema_slow:              p.ema_slow          ?? 50,
+      st_multiplier:         p.st_multiplier     ?? 2.0,
+      st_lookback:           p.st_lookback       ?? 10,
+      rsi_filter_enabled:    p.rsi_filter_enabled ?? false,
+      rsi_filter_long_level: p.rsi_filter_long_level ?? 50,
+      trade_direction:       p.trade_direction   ?? 'both',
+      stop_loss_pct: n(s.stop_loss_pct),
+      tp1_pct:       n(s.tp1_pct),
+      tp2_pct:       n(s.tp2_pct),
+      tp3_pct:       n(s.tp3_pct),
+    };
+  }, []);
+
   // Sync risk form when a strategy is selected
-  const handleSelectStrategy = (s: Strategy) => {
+  const handleSelectStrategy = useCallback((s: Strategy) => {
     setSelectedStrategy(s);
     syncRiskForm(s);
-  };
+    const p = s.strategy_params as StrategyParams | null;
+    // Auto-populate chart signals if strategy is already analyzed
+    const cfg = buildRiskConfig(s);
+    if (cfg) {
+      setChartRiskConfig(cfg);
+      // Re-analyze silently if strategy_type missing (old format from pre-v46 analysis)
+      if (!p?.strategy_type && s.pinescript_code) {
+        runAnalyze(s, false);
+      }
+    } else if (s.pinescript_code) {
+      // Strategy not analyzed yet — run silently so signals appear automatically
+      runAnalyze(s, false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildRiskConfig, syncRiskForm]);
 
   const handleSaveRisk = async () => {
     if (!selectedStrategy) return;
@@ -236,6 +282,7 @@ export default function StrategiesPage() {
       tp1_size_pct: n(riskForm.tp1_size_pct),
       tp2_size_pct: n(riskForm.tp2_size_pct),
       tp3_size_pct: n(riskForm.tp3_size_pct),
+      trade_amount_usdt: n(riskForm.trade_amount_usdt),
     };
     const { error } = await updateStrategy(selectedStrategy.id, patch);
     if (error) {
@@ -246,6 +293,20 @@ export default function StrategiesPage() {
       setStrategies(updated);
       const fresh = updated.find(s => s.id === selectedStrategy.id) ?? null;
       setSelectedStrategy(fresh);
+
+      // Build riskConfig for live chart overlay using saved params + strategy params
+      const cfg = buildRiskConfig(fresh ?? selectedStrategy);
+      if (cfg) {
+        // Override TP/SL with the just-saved form values
+        const n = (v: string) => v !== '' ? parseFloat(v) : null;
+        setChartRiskConfig({
+          ...cfg,
+          stop_loss_pct: n(riskForm.stop_loss_pct),
+          tp1_pct:       n(riskForm.tp1_pct),
+          tp2_pct:       n(riskForm.tp2_pct),
+          tp3_pct:       n(riskForm.tp3_pct),
+        });
+      }
     }
     setSavingRisk(false);
   };
@@ -701,6 +762,28 @@ export default function StrategiesPage() {
                     );
                   })()}
 
+                  {/* ── Live Candlestick Chart ── */}
+                  {(() => {
+                    const p = selectedStrategy.strategy_params as StrategyParams | null;
+                    const chartSymbol = selectedStrategy.symbol ?? p?.symbol ?? 'BTCUSDT';
+                    const chartTF = selectedStrategy.timeframe ?? p?.timeframe ?? '1h';
+                    return (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <BarChart2 className="h-3.5 w-3.5 text-primary" />
+                          <span className="text-xs font-medium text-foreground">Live Chart</span>
+                          <Badge variant="outline" className="text-[10px] border-primary/30 text-primary ml-auto">TradingView Style</Badge>
+                        </div>
+                        <StrategyLiveChart
+                          symbol={chartSymbol}
+                          timeframe={chartTF}
+                          strategyId={selectedStrategy.id}
+                          riskConfig={chartRiskConfig}
+                        />
+                      </div>
+                    );
+                  })()}
+
                   {/* ── Per-strategy Risk Settings ── */}
                   <div ref={riskPanelRef} className="rounded border border-border bg-muted/20 p-3 space-y-3">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -712,7 +795,24 @@ export default function StrategiesPage() {
                       <span className="text-[10px] text-muted-foreground">Leave blank = use global defaults</span>
                     </div>
 
-                    {/* Row 1: SL + Position Size */}
+                    {/* Row 1: Trade Amount USDT + SL + Position Size */}
+                    <div className="rounded border border-primary/20 bg-primary/5 px-3 py-2 space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-medium text-primary">💰 Trade Amount (USDT)</span>
+                        <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">Fixed</Badge>
+                        <span className="text-[10px] text-muted-foreground ml-auto">overrides Position Size %</span>
+                      </div>
+                      <Input
+                        type="number" min={1} max={100000} step={1}
+                        placeholder="e.g. 50 (USDT per trade)"
+                        value={riskForm.trade_amount_usdt}
+                        onChange={e => setRiskForm(f => ({ ...f, trade_amount_usdt: e.target.value }))}
+                        className="h-8 bg-input border-primary/30 text-sm data-mono"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        Set a fixed USDT amount per trade (e.g. 50 USDT). Leave blank to use Position Size % instead.
+                      </p>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label className="text-[11px] font-normal text-muted-foreground">Stop Loss %</Label>

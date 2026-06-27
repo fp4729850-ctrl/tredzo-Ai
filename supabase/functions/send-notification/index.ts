@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ── WhatsApp (via CallMeBot free API — user sets phone) ──
+  // ── WhatsApp (via CallMeBot free API — user sets phone + api key in Settings) ──
   if (settings.whatsapp_enabled && settings.whatsapp_phone && settings.whatsapp_api_key) {
     try {
       const emoji = payload.signal === 'BUY' ? '🟢' : '🔴';

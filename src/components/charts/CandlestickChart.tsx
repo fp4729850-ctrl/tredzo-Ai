@@ -3,9 +3,6 @@ import {
   createChart,
   ColorType,
   CrosshairMode,
-  CandlestickSeries,
-  createSeriesMarkers,
-  type IChartApi,
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts';
@@ -28,7 +25,8 @@ interface CandlestickChartProps {
 
 export function CandlestickChart({ candles, trades = [], symbol }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const chartRef = useRef<any | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || candles.length === 0) return;
@@ -38,22 +36,22 @@ export function CandlestickChart({ candles, trades = [], symbol }: CandlestickCh
     // Create chart with dark fintech theme matching app design system
     const chart = createChart(el, {
       layout: {
-        background: { type: ColorType.Solid, color: 'hsl(220, 15%, 8%)' },
-        textColor: 'hsl(215, 12%, 55%)',
+        background: { type: ColorType.Solid, color: '#0d1117' },
+        textColor: '#7a8499',
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: 'hsl(220, 12%, 16%)' },
-        horzLines: { color: 'hsl(220, 12%, 16%)' },
+        vertLines: { color: '#1e2330' },
+        horzLines: { color: '#1e2330' },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: 'hsl(191, 100%, 50%)', labelBackgroundColor: 'hsl(220, 15%, 11%)' },
-        horzLine: { color: 'hsl(191, 100%, 50%)', labelBackgroundColor: 'hsl(220, 15%, 11%)' },
+        vertLine: { color: '#00d4ff', labelBackgroundColor: '#161b27' },
+        horzLine: { color: '#00d4ff', labelBackgroundColor: '#161b27' },
       },
-      rightPriceScale: { borderColor: 'hsl(220, 12%, 20%)' },
+      rightPriceScale: { borderColor: '#272d3d' },
       timeScale: {
-        borderColor: 'hsl(220, 12%, 20%)',
+        borderColor: '#272d3d',
         timeVisible: true,
         secondsVisible: false,
       },
@@ -64,14 +62,15 @@ export function CandlestickChart({ candles, trades = [], symbol }: CandlestickCh
     });
     chartRef.current = chart;
 
-    // Add candlestick series using v5 API
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: 'hsl(145, 80%, 42%)',
-      downColor: 'hsl(10, 90%, 55%)',
-      borderUpColor: 'hsl(145, 80%, 42%)',
-      borderDownColor: 'hsl(10, 90%, 55%)',
-      wickUpColor: 'hsl(145, 60%, 50%)',
-      wickDownColor: 'hsl(10, 70%, 60%)',
+    // Add candlestick series using v5 runtime API (typings.d.ts incomplete)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const candleSeries = (chart as any).addCandlestickSeries({
+      upColor: '#22c55e',
+      downColor: '#ef4444',
+      borderUpColor: '#22c55e',
+      borderDownColor: '#ef4444',
+      wickUpColor: '#4ade80',
+      wickDownColor: '#f87171',
     });
 
     // Sort and deduplicate candles by time
@@ -109,7 +108,7 @@ export function CandlestickChart({ candles, trades = [], symbol }: CandlestickCh
         markers.push({
           time: snappedEntry as Time,
           position: trade.direction === 'buy' ? 'belowBar' : 'aboveBar',
-          color: trade.direction === 'buy' ? 'hsl(145, 80%, 42%)' : 'hsl(10, 90%, 55%)',
+          color: trade.direction === 'buy' ? '#22c55e' : '#ef4444',
           shape: trade.direction === 'buy' ? 'arrowUp' : 'arrowDown',
           text: `${trade.direction === 'buy' ? 'B' : 'S'} @${trade.entry_price.toFixed(2)}`,
           size: 1,
@@ -121,16 +120,17 @@ export function CandlestickChart({ candles, trades = [], symbol }: CandlestickCh
         markers.push({
           time: snappedExit as Time,
           position: trade.direction === 'buy' ? 'aboveBar' : 'belowBar',
-          color: profitable ? 'hsl(145, 60%, 55%)' : 'hsl(10, 70%, 60%)',
+          color: profitable ? '#4ade80' : '#f87171',
           shape: 'circle',
           text: `${profitable ? '+' : ''}${trade.pnl.toFixed(0)}`,
           size: 0.8,
         });
       }
 
-      // v5 requires markers sorted by time
+      // v4 API: setMarkers directly on series (sorted by time required)
       markers.sort((a, b) => (a.time as number) - (b.time as number));
-      createSeriesMarkers(candleSeries, markers);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (candleSeries as any).setMarkers(markers);
     }
 
     chart.timeScale().fitContent();

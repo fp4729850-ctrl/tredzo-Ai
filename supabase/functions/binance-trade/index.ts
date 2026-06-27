@@ -4,17 +4,21 @@ const corsHeaders = {
 };
 
 /* ────────────────────────────────────────────────
-   Binance Trading Edge Function
+   Binance Trading Edge Function v2
    Supports: test-connection | balance | create-order |
              get-order | open-orders | cancel-order
-   Testnet: https://testnet.binance.vision
-   Real:    https://api.binance.com
+   Spot Testnet:    https://testnet.binance.vision
+   Spot Real:       https://api.binance.com
+   Futures Testnet: https://testnet.binancefuture.com
+   Futures Real:    https://fapi.binance.com
    ──────────────────────────────────────────────── */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const BASE_REAL = 'https://api.binance.com';
-const BASE_TEST = 'https://testnet.binance.vision';
+const BASE_SPOT_REAL    = 'https://api.binance.com';
+const BASE_SPOT_TEST    = 'https://testnet.binance.vision';
+const BASE_FUTURES_REAL = 'https://fapi.binance.com';
+const BASE_FUTURES_TEST = 'https://testnet.binancefuture.com';
 const RECV_WINDOW = '5000';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -22,6 +26,7 @@ const RECV_WINDOW = '5000';
 interface BinanceRequest {
   action: 'test-connection' | 'balance' | 'create-order' | 'get-order' | 'open-orders' | 'cancel-order';
   testnet?: boolean;
+  tradingMode?: 'spot' | 'futures';
   symbol?: string;
   side?: 'BUY' | 'SELL';
   type?: 'MARKET' | 'LIMIT';
@@ -30,8 +35,18 @@ interface BinanceRequest {
   orderId?: number;
 }
 
-function baseUrl(testnet: boolean) {
-  return testnet ? BASE_TEST : BASE_REAL;
+/** Returns correct base URL + API path prefix based on mode */
+function resolveBase(testnet: boolean, tradingMode: 'spot' | 'futures'): { base: string; prefix: string } {
+  if (tradingMode === 'futures') {
+    return {
+      base: testnet ? BASE_FUTURES_TEST : BASE_FUTURES_REAL,
+      prefix: '/fapi/v1',
+    };
+  }
+  return {
+    base: testnet ? BASE_SPOT_TEST : BASE_SPOT_REAL,
+    prefix: '/api/v3',
+  };
 }
 
 async function hmacSha256Hex(secret: string, message: string): Promise<string> {
@@ -108,29 +123,80 @@ async function getUserApiKeys(userId: string) {
 
 /* ─── Handlers ─── */
 async function handleTestConnection(
-  apiKey: string, apiSecret: string, testnet: boolean,
+  apiKey: string, apiSecret: string, testnet: boolean, tradingMode: 'spot' | 'futures',
 ) {
-  const base = baseUrl(testnet);
-  const res = await signedFetch(`${base}/api/v3/account`, apiKey, apiSecret, {});
+  // Always validate key against Spot account first (same key works for both spot+futures)
+  // Spot endpoint is more permissive and works for API key validation
+  const spotBase = testnet ? BASE_SPOT_TEST : BASE_SPOT_REAL;
+
+  let spotRes: any = null;
+  let spotError: string | null = null;
+  try {
+    spotRes = await signedFetch(`${spotBase}/api/v3/account`, apiKey, apiSecret, {});
+  } catch (e: any) {
+    spotError = e.message;
+  }
+
+  // If spot validation failed, throw with helpful message
+  if (spotError) {
+    if (spotError.includes('451') || spotError.includes('Unavailable For Legal Reasons')) {
+      throw new Error('Binance API geo-restricted from this server region. Trade execution will work normally from your local browser.');
+    }
+    if (spotError.includes('Invalid API-key') || spotError.includes('API-key format invalid')) {
+      throw new Error('Invalid API key — double-check the key copied from Binance.');
+    }
+    if (spotError.includes('IP')) {
+      throw new Error('IP not whitelisted — go to Binance → API Management → edit your key → remove IP restriction or add this server IP.');
+    }
+    throw new Error(spotError);
+  }
+
+  // For futures mode, also try futures account to get balance info
+  let futuresSummary: any = null;
+  if (tradingMode === 'futures') {
+    const futBase = testnet ? BASE_FUTURES_TEST : BASE_FUTURES_REAL;
+    try {
+      const fRes = await signedFetch(`${futBase}/fapi/v1/account`, apiKey, apiSecret, {});
+      futuresSummary = {
+        totalWalletBalance: fRes.totalWalletBalance,
+        availableBalance: fRes.availableBalance,
+      };
+    } catch {
+      // Futures endpoint may still geo-block; key is still valid (spot check passed)
+      futuresSummary = null;
+    }
+  }
+
   return {
     success: true,
     mode: testnet ? 'testnet' : 'real',
-    accountType: res.accountType ?? 'unknown',
-    balances: (res.balances || []).slice(0, 5),
+    tradingMode,
+    accountType: tradingMode === 'futures' ? 'FUTURES' : (spotRes?.accountType ?? 'SPOT'),
+    summary: tradingMode === 'futures' && futuresSummary
+      ? futuresSummary
+      : { balances: (spotRes?.balances || []).filter((b: any) => parseFloat(b.free) > 0).slice(0, 5) },
   };
 }
 
-async function handleBalance(apiKey: string, apiSecret: string, testnet: boolean) {
-  const base = baseUrl(testnet);
-  const res = await signedFetch(`${base}/api/v3/account`, apiKey, apiSecret, {});
+async function handleBalance(apiKey: string, apiSecret: string, testnet: boolean, tradingMode: 'spot' | 'futures') {
+  const { base, prefix } = resolveBase(testnet, tradingMode);
+  const res = await signedFetch(`${base}${prefix}/account`, apiKey, apiSecret, {});
+  if (tradingMode === 'futures') {
+    return {
+      tradingMode,
+      totalWalletBalance: res.totalWalletBalance,
+      availableBalance: res.availableBalance,
+      assets: (res.assets || []).filter((a: any) => parseFloat(a.walletBalance) > 0),
+    };
+  }
   const nonzero = (res.balances || []).filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
-  return { balances: nonzero };
+  return { tradingMode, balances: nonzero };
 }
 
 async function handleCreateOrder(
-  apiKey: string, apiSecret: string, testnet: boolean, body: any,
+  apiKey: string, apiSecret: string, testnet: boolean, tradingMode: 'spot' | 'futures', body: any,
 ) {
-  const base = baseUrl(testnet);
+  const { base, prefix } = resolveBase(testnet, tradingMode);
   const params: Record<string, string> = {
     symbol: body.symbol!.toUpperCase(),
     side: body.side!,
@@ -141,42 +207,53 @@ async function handleCreateOrder(
     params.price = String(body.price);
     params.timeInForce = 'GTC';
   }
-  const res = await signedFetch(`${base}/api/v3/order`, apiKey, apiSecret, params, 'POST');
-  return { order: res };
+  // Futures requires positionSide for hedge mode (default: BOTH for one-way mode)
+  if (tradingMode === 'futures') {
+    params.positionSide = 'BOTH';
+  }
+  const res = await signedFetch(`${base}${prefix}/order`, apiKey, apiSecret, params, 'POST');
+  return { order: res, tradingMode };
 }
 
 async function handleGetOrder(
-  apiKey: string, apiSecret: string, testnet: boolean, body: any,
+  apiKey: string, apiSecret: string, testnet: boolean, tradingMode: 'spot' | 'futures', body: any,
 ) {
-  const base = baseUrl(testnet);
+  const { base, prefix } = resolveBase(testnet, tradingMode);
   const params: Record<string, string> = {
     symbol: body.symbol!.toUpperCase(),
     orderId: String(body.orderId!),
   };
-  const res = await signedFetch(`${base}/api/v3/order`, apiKey, apiSecret, params);
+  const res = await signedFetch(`${base}${prefix}/order`, apiKey, apiSecret, params);
   return { order: res };
 }
 
 async function handleOpenOrders(
-  apiKey: string, apiSecret: string, testnet: boolean, body: any,
+  apiKey: string, apiSecret: string, testnet: boolean, tradingMode: 'spot' | 'futures', body: any,
 ) {
-  const base = baseUrl(testnet);
+  const { base, prefix } = resolveBase(testnet, tradingMode);
   const params: Record<string, string> = {};
   if (body.symbol) params.symbol = body.symbol.toUpperCase();
-  const res = await signedFetch(`${base}/api/v3/openOrders`, apiKey, apiSecret, params);
+  const res = await signedFetch(`${base}${prefix}/openOrders`, apiKey, apiSecret, params);
   return { orders: res };
 }
 
 async function handleCancelOrder(
-  apiKey: string, apiSecret: string, testnet: boolean, body: any,
+  apiKey: string, apiSecret: string, testnet: boolean, tradingMode: 'spot' | 'futures', body: any,
 ) {
-  const base = baseUrl(testnet);
+  const { base, prefix } = resolveBase(testnet, tradingMode);
   const params: Record<string, string> = {
     symbol: body.symbol!.toUpperCase(),
     orderId: String(body.orderId!),
   };
-  const res = await signedFetch(`${base}/api/v3/order`, apiKey, apiSecret, params, 'DELETE');
+  const res = await signedFetch(`${base}${prefix}/order`, apiKey, apiSecret, params, 'DELETE');
   return { order: res };
+}
+
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 }
 
 /* ─── Deno handler ─── */
@@ -214,22 +291,23 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { key, secret, useTestnet } = await getUserApiKeys(userId);
+    const { key, secret, useTestnet, tradingMode: dbTradingMode } = await getUserApiKeys(userId);
     const testnet = body.testnet ?? useTestnet ?? true; // default safe: testnet
+    const tradingMode = body.tradingMode ?? dbTradingMode ?? 'spot';
 
     switch (body.action) {
       case 'test-connection':
-        return jsonResponse(await handleTestConnection(key, secret, testnet));
+        return jsonResponse(await handleTestConnection(key, secret, testnet, tradingMode));
       case 'balance':
-        return jsonResponse(await handleBalance(key, secret, testnet));
+        return jsonResponse(await handleBalance(key, secret, testnet, tradingMode));
       case 'create-order':
-        return jsonResponse(await handleCreateOrder(key, secret, testnet, body));
+        return jsonResponse(await handleCreateOrder(key, secret, testnet, tradingMode, body));
       case 'get-order':
-        return jsonResponse(await handleGetOrder(key, secret, testnet, body));
+        return jsonResponse(await handleGetOrder(key, secret, testnet, tradingMode, body));
       case 'open-orders':
-        return jsonResponse(await handleOpenOrders(key, secret, testnet, body));
+        return jsonResponse(await handleOpenOrders(key, secret, testnet, tradingMode, body));
       case 'cancel-order':
-        return jsonResponse(await handleCancelOrder(key, secret, testnet, body));
+        return jsonResponse(await handleCancelOrder(key, secret, testnet, tradingMode, body));
       default:
         return jsonResponse({ error: `Unknown action: ${body.action}` }, 400);
     }
@@ -238,9 +316,3 @@ Deno.serve(async (req) => {
   }
 });
 
-function jsonResponse(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
-}

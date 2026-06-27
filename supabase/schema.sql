@@ -3223,7 +3223,7 @@ CREATE TABLE "public"."market_scans" (
 --
 
 CREATE TABLE "public"."profiles" (
-    "id" "uuid" NOT NULL,
+    "id" "uuid" DEFAULT "auth"."uid"() NOT NULL,
     "username" "text",
     "email" "text",
     "phone" "text",
@@ -3293,7 +3293,8 @@ CREATE TABLE "public"."strategies" (
     "last_executed_at" timestamp with time zone,
     "last_signal" "text",
     "symbol" character varying(20) DEFAULT NULL::character varying,
-    "symbols" "text"[]
+    "symbols" "text"[],
+    "trade_amount_usdt" numeric
 );
 
 
@@ -3346,7 +3347,8 @@ CREATE TABLE "public"."user_settings" (
     "telegram_chat_id" "text",
     "whatsapp_enabled" boolean DEFAULT false,
     "whatsapp_phone" "text",
-    "notifications_enabled" boolean DEFAULT true
+    "notifications_enabled" boolean DEFAULT true,
+    "whatsapp_api_key" "text"
 );
 
 
@@ -5208,6 +5210,13 @@ CREATE POLICY "Users can insert own strategies" ON "public"."strategies" FOR INS
 --
 
 CREATE POLICY "Users can insert own trades" ON "public"."trades" FOR INSERT TO "authenticated" WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+--
+-- Name: profiles Users can insert their own profile; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can insert their own profile" ON "public"."profiles" FOR INSERT TO "authenticated" WITH CHECK (("auth"."uid"() = "id"));
 
 
 --

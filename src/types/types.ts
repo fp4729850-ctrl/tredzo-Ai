@@ -38,11 +38,17 @@ export interface UserSettings {
 }
 
 export interface StrategyParams {
+  strategy_type?: 'rsi_ema' | 'supertrend' | 'smc' | 'mixed';
   rsi_length: number;
   overbought: number;
   oversold: number;
   ema_fast: number;
   ema_slow: number;
+  st_multiplier?: number;
+  st_lookback?: number;
+  rsi_filter_enabled?: boolean;
+  rsi_filter_long_level?: number;
+  rsi_filter_short_level?: number;
   symbol: string;
   timeframe: string;
   has_stop_loss: boolean;
@@ -72,6 +78,7 @@ export interface Strategy {
   tp1_size_pct: number | null;
   tp2_size_pct: number | null;
   tp3_size_pct: number | null;
+  trade_amount_usdt: number | null;
   status: StrategyStatus;
   created_at: string;
   updated_at: string;

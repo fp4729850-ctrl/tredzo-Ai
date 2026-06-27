@@ -70,7 +70,12 @@ export default function SettingsPage() {
       toast.error(`Connection failed: ${error}`);
     } else {
       const d = data as { mode?: string; accountType?: string };
-      toast.success(`Connected! Mode: ${d.mode ?? 'unknown'} | Type: ${d.accountType ?? 'N/A'}`, { icon: '✅' });
+      const configuredMode = settings.use_testnet ? 'testnet' : 'real';
+      const configuredType = settings.trading_mode ?? 'spot';
+      toast.success(
+        `Connected! Mode: ${d.mode ?? configuredMode} | Trading: ${configuredType.toUpperCase()}`,
+        { icon: '✅' }
+      );
     }
   };
 
@@ -378,28 +383,30 @@ export default function SettingsPage() {
                 <p>2. Send this message to that number: <code className="bg-muted px-1 rounded">I allow callmebot to send me messages</code></p>
                 <p>You'll receive your API key via WhatsApp within a minute.</p>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-normal">Your WhatsApp Phone Number</Label>
-                <Input
-                  placeholder="+919876543210 (with country code)"
-                  value={settings.whatsapp_phone ?? ''}
-                  onChange={e => set('whatsapp_phone', e.target.value)}
-                  disabled={!settings.whatsapp_enabled}
-                  className="bg-input border-border font-mono text-sm"
-                />
-                <p className="text-[10px] text-muted-foreground">Include country code, e.g. +91 for India</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-normal">WhatsApp API Key</Label>
-                <Input
-                  type="password"
-                  placeholder="Enter API Key received from CallMeBot"
-                  value={settings.whatsapp_api_key ?? ''}
-                  onChange={e => set('whatsapp_api_key', e.target.value)}
-                  disabled={!settings.whatsapp_enabled}
-                  className="bg-input border-border font-mono text-sm"
-                />
-                <p className="text-[10px] text-muted-foreground">Enter the API key sent to you by the bot</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-normal">Your WhatsApp Phone Number</Label>
+                  <Input
+                    placeholder="+919876543210 (with country code)"
+                    value={settings.whatsapp_phone ?? ''}
+                    onChange={e => set('whatsapp_phone', e.target.value)}
+                    disabled={!settings.whatsapp_enabled}
+                    className="bg-input border-border font-mono text-sm"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Include country code, e.g. +91 for India</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-normal">CallMeBot API Key</Label>
+                  <Input
+                    type="password"
+                    placeholder="API key received via WhatsApp"
+                    value={settings.whatsapp_api_key ?? ''}
+                    onChange={e => set('whatsapp_api_key', e.target.value)}
+                    disabled={!settings.whatsapp_enabled}
+                    className="bg-input border-border font-mono text-sm"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Sent to you by CallMeBot after setup</p>
+                </div>
               </div>
             </div>
           </CardContent>
