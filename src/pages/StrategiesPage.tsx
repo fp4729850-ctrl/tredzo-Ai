@@ -69,17 +69,28 @@ export default function StrategiesPage() {
   const [form, setForm] = useState({ name: '', description: '', pinescript_code: SAMPLE_PINESCRIPT });
   const [saving, setSaving] = useState(false);
 
-  // Per-strategy risk override state — includes multi-TP
+  // Per-strategy risk override state — includes multi-TP + indicator params
   const [riskForm, setRiskForm] = useState<{
     stop_loss_pct: string; take_profit_pct: string; position_size_pct: string;
     tp1_pct: string; tp2_pct: string; tp3_pct: string;
     tp1_size_pct: string; tp2_size_pct: string; tp3_size_pct: string;
     trade_amount_usdt: string;
+    // Indicator params (AI-extracted, user-editable)
+    rsi_length: string; overbought: string; oversold: string;
+    ema_fast: string; ema_slow: string;
+    st_multiplier: string; st_lookback: string;
+    trade_direction: 'long' | 'short' | 'both';
+    strategy_type: 'rsi_ema' | 'supertrend' | 'smc' | 'mixed';
   }>({
     stop_loss_pct: '', take_profit_pct: '', position_size_pct: '',
     tp1_pct: '', tp2_pct: '', tp3_pct: '',
     tp1_size_pct: '', tp2_size_pct: '', tp3_size_pct: '',
     trade_amount_usdt: '',
+    rsi_length: '14', overbought: '70', oversold: '30',
+    ema_fast: '20', ema_slow: '50',
+    st_multiplier: '2.0', st_lookback: '10',
+    trade_direction: 'both',
+    strategy_type: 'rsi_ema',
   });
   const [savingRisk, setSavingRisk] = useState(false);
   const [justAnalyzedId, setJustAnalyzedId] = useState<string | null>(null);
@@ -148,8 +159,9 @@ export default function StrategiesPage() {
     }
   };
 
-  // Sync risk form from a strategy object
+  // Sync risk form from a strategy object (including indicator params)
   const syncRiskForm = useCallback((s: Strategy) => {
+    const p = s.strategy_params as StrategyParams | null;
     setRiskForm({
       stop_loss_pct: s.stop_loss_pct != null ? String(s.stop_loss_pct) : '',
       take_profit_pct: s.take_profit_pct != null ? String(s.take_profit_pct) : '',
@@ -161,6 +173,16 @@ export default function StrategiesPage() {
       tp2_size_pct: s.tp2_size_pct != null ? String(s.tp2_size_pct) : '',
       tp3_size_pct: s.tp3_size_pct != null ? String(s.tp3_size_pct) : '',
       trade_amount_usdt: s.trade_amount_usdt != null ? String(s.trade_amount_usdt) : '',
+      // Indicator params from strategy_params
+      rsi_length: p?.rsi_length != null ? String(p.rsi_length) : '14',
+      overbought: p?.overbought != null ? String(p.overbought) : '70',
+      oversold: p?.oversold != null ? String(p.oversold) : '30',
+      ema_fast: p?.ema_fast != null ? String(p.ema_fast) : '20',
+      ema_slow: p?.ema_slow != null ? String(p.ema_slow) : '50',
+      st_multiplier: p?.st_multiplier != null ? String(p.st_multiplier) : '2.0',
+      st_lookback: p?.st_lookback != null ? String(p.st_lookback) : '10',
+      trade_direction: p?.trade_direction ?? 'both',
+      strategy_type: p?.strategy_type ?? 'rsi_ema',
     });
   }, []);
 
@@ -272,6 +294,22 @@ export default function StrategiesPage() {
     if (!selectedStrategy) return;
     setSavingRisk(true);
     const n = (v: string) => v !== '' ? parseFloat(v) : null;
+
+    // Build updated strategy_params (indicator params)
+    const existingParams = (selectedStrategy.strategy_params as StrategyParams | null) ?? {} as StrategyParams;
+    const updatedParams: StrategyParams = {
+      ...existingParams,
+      strategy_type: riskForm.strategy_type,
+      rsi_length:    n(riskForm.rsi_length)    ?? existingParams.rsi_length    ?? 14,
+      overbought:    n(riskForm.overbought)    ?? existingParams.overbought    ?? 70,
+      oversold:      n(riskForm.oversold)      ?? existingParams.oversold      ?? 30,
+      ema_fast:      n(riskForm.ema_fast)      ?? existingParams.ema_fast      ?? 20,
+      ema_slow:      n(riskForm.ema_slow)      ?? existingParams.ema_slow      ?? 50,
+      st_multiplier: n(riskForm.st_multiplier) ?? existingParams.st_multiplier ?? 2.0,
+      st_lookback:   n(riskForm.st_lookback)   ?? existingParams.st_lookback   ?? 10,
+      trade_direction: riskForm.trade_direction,
+    };
+
     const patch: Partial<Strategy> = {
       stop_loss_pct: n(riskForm.stop_loss_pct),
       take_profit_pct: n(riskForm.take_profit_pct),
@@ -283,12 +321,13 @@ export default function StrategiesPage() {
       tp2_size_pct: n(riskForm.tp2_size_pct),
       tp3_size_pct: n(riskForm.tp3_size_pct),
       trade_amount_usdt: n(riskForm.trade_amount_usdt),
+      strategy_params: updatedParams,
     };
     const { error } = await updateStrategy(selectedStrategy.id, patch);
     if (error) {
       toast.error(`Failed to save risk settings: ${error}`);
     } else {
-      toast.success('Risk settings saved — will override global defaults on next execution', { icon: '🛡️' });
+      toast.success('Risk settings saved — indicator params + risk updated!', { icon: '🛡️' });
       const updated = await getStrategies();
       setStrategies(updated);
       const fresh = updated.find(s => s.id === selectedStrategy.id) ?? null;
@@ -298,13 +337,20 @@ export default function StrategiesPage() {
       const cfg = buildRiskConfig(fresh ?? selectedStrategy);
       if (cfg) {
         // Override TP/SL with the just-saved form values
-        const n = (v: string) => v !== '' ? parseFloat(v) : null;
+        const nv = (v: string) => v !== '' ? parseFloat(v) : null;
         setChartRiskConfig({
           ...cfg,
-          stop_loss_pct: n(riskForm.stop_loss_pct),
-          tp1_pct:       n(riskForm.tp1_pct),
-          tp2_pct:       n(riskForm.tp2_pct),
-          tp3_pct:       n(riskForm.tp3_pct),
+          strategy_type:  riskForm.strategy_type,
+          rsi_length:     n(riskForm.rsi_length)    ?? cfg.rsi_length,
+          overbought:     n(riskForm.overbought)    ?? cfg.overbought,
+          oversold:       n(riskForm.oversold)      ?? cfg.oversold,
+          ema_fast:       n(riskForm.ema_fast)      ?? cfg.ema_fast,
+          ema_slow:       n(riskForm.ema_slow)      ?? cfg.ema_slow,
+          stop_loss_pct:  nv(riskForm.stop_loss_pct),
+          tp1_pct:        nv(riskForm.tp1_pct),
+          tp2_pct:        nv(riskForm.tp2_pct),
+          tp3_pct:        nv(riskForm.tp3_pct),
+          trade_direction: riskForm.trade_direction,
         });
       }
     }
@@ -792,7 +838,131 @@ export default function StrategiesPage() {
                         <span className="text-xs font-medium text-foreground">Risk Settings</span>
                         <Badge variant="outline" className="text-[10px] border-warning/40 text-warning">Per-Strategy Override</Badge>
                       </div>
-                      <span className="text-[10px] text-muted-foreground">Leave blank = use global defaults</span>
+                      <span className="text-[10px] text-muted-foreground">AI-extracted · user-editable</span>
+                    </div>
+
+                    {/* ── Indicator Settings (AI-extracted) ── */}
+                    <div className="rounded border border-primary/20 bg-primary/5 p-3 space-y-3">
+                      <div className="flex items-center gap-1.5">
+                        <Bot className="h-3.5 w-3.5 text-primary" />
+                        <span className="text-[11px] font-medium text-primary">🤖 Strategy Indicators</span>
+                        <Badge variant="outline" className="text-[10px] border-primary/30 text-primary ml-auto">AI Extracted</Badge>
+                      </div>
+
+                      {/* Strategy Type + Trade Direction */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[11px] font-normal text-muted-foreground">Strategy Type</Label>
+                          <select
+                            value={riskForm.strategy_type}
+                            onChange={e => setRiskForm(f => ({ ...f, strategy_type: e.target.value as typeof f.strategy_type }))}
+                            className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                          >
+                            <option value="rsi_ema">RSI + EMA</option>
+                            <option value="supertrend">SuperTrend</option>
+                            <option value="smc">SMC (Smart Money)</option>
+                            <option value="mixed">Mixed</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px] font-normal text-muted-foreground">Trade Direction</Label>
+                          <select
+                            value={riskForm.trade_direction}
+                            onChange={e => setRiskForm(f => ({ ...f, trade_direction: e.target.value as typeof f.trade_direction }))}
+                            className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                          >
+                            <option value="both">Both (Long + Short)</option>
+                            <option value="long">Long Only</option>
+                            <option value="short">Short Only</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* RSI Settings */}
+                      {(riskForm.strategy_type === 'rsi_ema' || riskForm.strategy_type === 'mixed') && (
+                        <div className="space-y-1.5">
+                          <span className="text-[11px] font-medium text-foreground flex items-center gap-1">
+                            <Activity className="h-3 w-3 text-primary" /> RSI Settings
+                          </span>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-muted-foreground">Length</Label>
+                              <Input type="number" min={2} max={200} step={1}
+                                value={riskForm.rsi_length}
+                                onChange={e => setRiskForm(f => ({ ...f, rsi_length: e.target.value }))}
+                                className="h-7 bg-input border-border text-xs font-mono" />
+                            </div>
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive" />Overbought</Label>
+                              <Input type="number" min={50} max={99} step={1}
+                                value={riskForm.overbought}
+                                onChange={e => setRiskForm(f => ({ ...f, overbought: e.target.value }))}
+                                className="h-7 bg-input border-border text-xs font-mono" />
+                            </div>
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-success" />Oversold</Label>
+                              <Input type="number" min={1} max={49} step={1}
+                                value={riskForm.oversold}
+                                onChange={e => setRiskForm(f => ({ ...f, oversold: e.target.value }))}
+                                className="h-7 bg-input border-border text-xs font-mono" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* EMA Settings */}
+                      {(riskForm.strategy_type === 'rsi_ema' || riskForm.strategy_type === 'mixed') && (
+                        <div className="space-y-1.5">
+                          <span className="text-[11px] font-medium text-foreground flex items-center gap-1">
+                            <TrendingUp className="h-3 w-3 text-primary" /> EMA Settings
+                          </span>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-muted-foreground">Fast Period</Label>
+                              <Input type="number" min={1} max={500} step={1}
+                                value={riskForm.ema_fast}
+                                onChange={e => setRiskForm(f => ({ ...f, ema_fast: e.target.value }))}
+                                className="h-7 bg-input border-border text-xs font-mono" />
+                            </div>
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-muted-foreground">Slow Period</Label>
+                              <Input type="number" min={1} max={500} step={1}
+                                value={riskForm.ema_slow}
+                                onChange={e => setRiskForm(f => ({ ...f, ema_slow: e.target.value }))}
+                                className="h-7 bg-input border-border text-xs font-mono" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SuperTrend Settings */}
+                      {(riskForm.strategy_type === 'supertrend' || riskForm.strategy_type === 'mixed') && (
+                        <div className="space-y-1.5">
+                          <span className="text-[11px] font-medium text-foreground flex items-center gap-1">
+                            <Zap className="h-3 w-3 text-warning" /> SuperTrend Settings
+                          </span>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-muted-foreground">Multiplier</Label>
+                              <Input type="number" min={0.1} max={20} step={0.1}
+                                value={riskForm.st_multiplier}
+                                onChange={e => setRiskForm(f => ({ ...f, st_multiplier: e.target.value }))}
+                                className="h-7 bg-input border-border text-xs font-mono" />
+                            </div>
+                            <div className="space-y-0.5">
+                              <Label className="text-[10px] text-muted-foreground">Lookback Period</Label>
+                              <Input type="number" min={1} max={200} step={1}
+                                value={riskForm.st_lookback}
+                                onChange={e => setRiskForm(f => ({ ...f, st_lookback: e.target.value }))}
+                                className="h-7 bg-input border-border text-xs font-mono" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <p className="text-[10px] text-primary/70">
+                        ✨ AI Analyze karne ke baad sab fields auto-fill ho jaate hain. Aap inhe manually bhi edit kar sakte hain.
+                      </p>
                     </div>
 
                     {/* Row 1: Trade Amount USDT + SL + Position Size */}

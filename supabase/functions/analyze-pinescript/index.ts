@@ -44,7 +44,50 @@ Deno.serve(async (req) => {
 
     const params = extractParams(code);
     const risk = extractRiskPct(code);
-    const interpretation = buildInterpretation(code, params, risk);
+
+    // ── Gemini AI Enhancement ──────────────────────────────────────────────────
+    const geminiKey = Deno.env.get('GEMINI_API_KEY');
+    let aiInterpretation: string | null = null;
+
+    if (geminiKey) {
+      try {
+        const geminiResult = await callGemini(geminiKey, code, params, risk);
+        if (geminiResult) {
+          // Merge Gemini-extracted values into params/risk (Gemini overrides regex)
+          if (geminiResult.params) {
+            if (geminiResult.params.rsi_length)      params.rsi_length      = geminiResult.params.rsi_length;
+            if (geminiResult.params.overbought)       params.overbought       = geminiResult.params.overbought;
+            if (geminiResult.params.oversold)         params.oversold         = geminiResult.params.oversold;
+            if (geminiResult.params.ema_fast)         params.ema_fast         = geminiResult.params.ema_fast;
+            if (geminiResult.params.ema_slow)         params.ema_slow         = geminiResult.params.ema_slow;
+            if (geminiResult.params.st_multiplier)    params.st_multiplier    = geminiResult.params.st_multiplier;
+            if (geminiResult.params.st_lookback)      params.st_lookback      = geminiResult.params.st_lookback;
+            if (geminiResult.params.trade_direction)  params.trade_direction  = geminiResult.params.trade_direction;
+            if (geminiResult.params.strategy_type)    params.strategy_type    = geminiResult.params.strategy_type;
+            if (geminiResult.params.timeframe)        params.timeframe        = geminiResult.params.timeframe;
+            if (geminiResult.params.symbol)           params.symbol           = geminiResult.params.symbol;
+          }
+          if (geminiResult.risk) {
+            if (geminiResult.risk.stop_loss_pct    != null) risk.stop_loss_pct    = geminiResult.risk.stop_loss_pct;
+            if (geminiResult.risk.take_profit_pct  != null) risk.take_profit_pct  = geminiResult.risk.take_profit_pct;
+            if (geminiResult.risk.position_size_pct != null) risk.position_size_pct = geminiResult.risk.position_size_pct;
+            if (geminiResult.risk.tp1_pct          != null) risk.tp1_pct          = geminiResult.risk.tp1_pct;
+            if (geminiResult.risk.tp2_pct          != null) risk.tp2_pct          = geminiResult.risk.tp2_pct;
+            if (geminiResult.risk.tp3_pct          != null) risk.tp3_pct          = geminiResult.risk.tp3_pct;
+            if (geminiResult.risk.tp1_size_pct     != null) risk.tp1_size_pct     = geminiResult.risk.tp1_size_pct;
+            if (geminiResult.risk.tp2_size_pct     != null) risk.tp2_size_pct     = geminiResult.risk.tp2_size_pct;
+            if (geminiResult.risk.tp3_size_pct     != null) risk.tp3_size_pct     = geminiResult.risk.tp3_size_pct;
+          }
+          if (geminiResult.interpretation) {
+            aiInterpretation = geminiResult.interpretation;
+          }
+        }
+      } catch (geminiErr) {
+        console.warn('Gemini enhancement failed, using regex extraction:', geminiErr);
+      }
+    }
+
+    const interpretation = aiInterpretation ?? buildInterpretation(code, params, risk);
 
     if (strategyId) {
       const supabase = createClient(
@@ -84,6 +127,96 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+// ─── Gemini AI Analysis ────────────────────────────────────────────────────────
+async function callGemini(
+  apiKey: string,
+  code: string,
+  regexParams: StrategyParams,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  regexRisk: Record<string, any>
+): Promise<{
+  params?: Partial<StrategyParams>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  risk?: Record<string, number | null>;
+  interpretation?: string;
+} | null> {
+  const prompt = `You are an expert PineScript trading strategy analyzer. Analyze this PineScript code and extract ALL parameters accurately.
+
+Return a JSON object with EXACTLY this structure (no markdown, no code blocks, just raw JSON):
+{
+  "params": {
+    "strategy_type": "rsi_ema" or "supertrend" or "smc" or "mixed",
+    "rsi_length": <number or null>,
+    "overbought": <number or null>,
+    "oversold": <number or null>,
+    "ema_fast": <number or null>,
+    "ema_slow": <number or null>,
+    "st_multiplier": <number or null>,
+    "st_lookback": <number or null>,
+    "trade_direction": "long" or "short" or "both",
+    "timeframe": <string like "1h","4h","15m" or null>,
+    "symbol": <string like "BTCUSDT" or null>
+  },
+  "risk": {
+    "stop_loss_pct": <number or null - the SL percentage value, NOT ticks>,
+    "take_profit_pct": <number or null>,
+    "tp1_pct": <number or null>,
+    "tp2_pct": <number or null>,
+    "tp3_pct": <number or null>,
+    "tp1_size_pct": <number or null - percentage of position to close at TP1>,
+    "tp2_size_pct": <number or null>,
+    "tp3_size_pct": <number or null>,
+    "position_size_pct": <number or null>
+  },
+  "interpretation": "<detailed 3-5 sentence explanation of what this strategy does, its entry/exit logic, and key parameters in simple trading language>"
+}
+
+IMPORTANT RULES:
+- For stop_loss_pct: if code says "loss=150" in strategy.exit, that means 1.5% (divide by 100). If it says input.float(1.5, "Stop Loss %") that means 1.5 directly.
+- For ema_fast/ema_slow: find the SMALLEST and LARGEST EMA period values respectively.
+- If the strategy has BOTH long AND short entries, set trade_direction = "both"
+- For timeframe: look for input.timeframe() or comments mentioning TF. Return null if not found.
+- Only include indicators actually present in the code.
+
+Current regex extraction (for reference/verification):
+- RSI Length: ${regexParams.rsi_length}, Overbought: ${regexParams.overbought}, Oversold: ${regexParams.oversold}
+- EMA Fast: ${regexParams.ema_fast}, EMA Slow: ${regexParams.ema_slow}
+- SL%: ${regexRisk.stop_loss_pct}, TP1%: ${regexRisk.tp1_pct}, TP2%: ${regexRisk.tp2_pct}, TP3%: ${regexRisk.tp3_pct}
+
+PineScript Code:
+\`\`\`pine
+${code.slice(0, 6000)}
+\`\`\``;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 1024,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Gemini API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+
+  // Extract JSON from response (handle potential markdown wrapping)
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON in Gemini response');
+
+  return JSON.parse(jsonMatch[0]);
+}
 
 // ─── Strategy Type Detection ──────────────────────────────────────────────────
 function detectStrategyType(code: string): StrategyParams['strategy_type'] {
