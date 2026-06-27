@@ -41,8 +41,9 @@ export default function LoginPage() {
             .from('profiles')
             .upsert({ id: signUpData.user.id, username, email, updated_at: new Date().toISOString() });
         }
-        toast.success('Account created! You are now logged in.');
-        navigate('/');
+        toast.success('Account created! Please check your email inbox to verify your account before logging in.', { duration: 8000 });
+        setIsLogin(true); // Switch to login tab so they can login after verifying
+        setPassword(''); // Clear password for security
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Authentication failed';
