@@ -3,6 +3,8 @@ import {
   createChart,
   ColorType,
   CrosshairMode,
+  CandlestickSeries,
+  LineSeries,
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts';
@@ -545,8 +547,7 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
     });
     chartRef.current = chart;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const candleSeries = (chart as any).addCandlestickSeries({
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#22c55e',
       downColor: '#ef4444',
       borderUpColor: '#22c55e',
@@ -647,8 +648,7 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
       const lastSig = strategySignals[strategySignals.length - 1];
 
       if (lastSig.slPrice != null) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const slLine = (chart as any).addLineSeries({
+        const slLine = chart.addSeries(LineSeries, {
           color: '#ef4444',
           lineWidth: 1,
           lineStyle: 2, // dashed
@@ -666,8 +666,7 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
 
       const tpColors = ['#22c55e', '#4ade80', '#86efac'];
       lastSig.tpPrices.forEach((tp, idx) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const tpLine = (chart as any).addLineSeries({
+        const tpLine = chart.addSeries(LineSeries, {
           color: tpColors[idx] ?? '#22c55e',
           lineWidth: 1,
           lineStyle: 2,
