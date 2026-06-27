@@ -635,10 +635,11 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
       }
     }
 
-    if (allMarkers.length > 0) {
-      allMarkers.sort((a, b) => (a.time as number) - (b.time as number));
+    const validMarkers = allMarkers.filter(m => m.time != null && !isNaN(Number(m.time)));
+    if (validMarkers.length > 0) {
+      validMarkers.sort((a, b) => (a.time as number) - (b.time as number));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (candleSeries as any).setMarkers(allMarkers);
+      (candleSeries as any).setMarkers(validMarkers);
     }
 
     // ── SL / TP price lines for the LAST strategy signal ──
@@ -656,10 +657,11 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
           lastValueVisible: true,
           priceLineVisible: false,
         });
-        slLine.setData([
-          { time: lastSig.time as Time, value: lastSig.slPrice },
-          { time: sorted[sorted.length - 1].time as Time, value: lastSig.slPrice },
-        ]);
+        const slData = [{ time: lastSig.time as Time, value: lastSig.slPrice }];
+        if (lastSig.time !== sorted[sorted.length - 1].time) {
+          slData.push({ time: sorted[sorted.length - 1].time as Time, value: lastSig.slPrice });
+        }
+        slLine.setData(slData);
       }
 
       const tpColors = ['#22c55e', '#4ade80', '#86efac'];
@@ -674,10 +676,11 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
           lastValueVisible: true,
           priceLineVisible: false,
         });
-        tpLine.setData([
-          { time: lastSig.time as Time, value: tp },
-          { time: sorted[sorted.length - 1].time as Time, value: tp },
-        ]);
+        const tpData = [{ time: lastSig.time as Time, value: tp }];
+        if (lastSig.time !== sorted[sorted.length - 1].time) {
+          tpData.push({ time: sorted[sorted.length - 1].time as Time, value: tp });
+        }
+        tpLine.setData(tpData);
       });
     }
 
