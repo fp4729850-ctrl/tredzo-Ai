@@ -348,6 +348,7 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const candleSeriesRef = useRef<any | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const userPannedRef = useRef<boolean>(false); // track if user manually scrolled
 
   const [activeSymbol, setActiveSymbol] = useState(defaultSymbol || 'BTCUSDT');
   const [activeTF, setActiveTF] = useState(defaultTF || '1h');
@@ -546,7 +547,15 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
       handleScroll: true,
       handleScale: true,
     });
+    // Reset pan state when chart rebuilds (e.g. TF or symbol change)
+    userPannedRef.current = false;
     chartRef.current = chart;
+
+    // Track when user manually scrolls/zooms
+    chart.timeScale().subscribeVisibleTimeRangeChange(() => {
+      // Mark as user-panned so we stop auto-scrolling
+      userPannedRef.current = true;
+    });
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#22c55e',
@@ -691,7 +700,10 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
       });
     }
 
-    chart.timeScale().fitContent();
+    // Only fitContent on the very first load; after that, let user control the view
+    if (!userPannedRef.current) {
+      chart.timeScale().fitContent();
+    }
 
     const ro = new ResizeObserver(entries => {
       for (const entry of entries) {
