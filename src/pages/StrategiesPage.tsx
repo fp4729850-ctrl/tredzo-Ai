@@ -80,7 +80,7 @@ export default function StrategiesPage() {
     ema_fast: string; ema_slow: string;
     st_multiplier: string; st_lookback: string;
     trade_direction: 'long' | 'short' | 'both';
-    strategy_type: 'rsi_ema' | 'supertrend' | 'smc' | 'mixed';
+    strategy_type: 'rsi_ema' | 'supertrend' | 'smc' | 'mixed' | 'custom';
   }>({
     stop_loss_pct: '', take_profit_pct: '', position_size_pct: '',
     tp1_pct: '', tp2_pct: '', tp3_pct: '',
@@ -877,10 +877,11 @@ export default function StrategiesPage() {
                             onChange={e => setRiskForm(f => ({ ...f, strategy_type: e.target.value as typeof f.strategy_type }))}
                             className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                           >
-                            <option value="rsi_ema">RSI + EMA</option>
+                            <option value="rsi_ema">RSI & EMA</option>
                             <option value="supertrend">SuperTrend</option>
-                            <option value="smc">SMC (Smart Money)</option>
+                            <option value="smc">Smart Money Concepts</option>
                             <option value="mixed">Mixed</option>
+                            <option value="custom">Custom Strategy</option>
                           </select>
                         </div>
                         <div className="space-y-1">
@@ -976,6 +977,15 @@ export default function StrategiesPage() {
                                 className="h-7 bg-input border-border text-xs font-mono" />
                             </div>
                           </div>
+                        </div>
+                      )}
+
+                      {riskForm.strategy_type === 'custom' && (
+                        <div className="py-2">
+                          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                            <Code2 className="h-4 w-4 text-primary" />
+                            This is a Custom Strategy. No AI indicator settings are displayed.
+                          </p>
                         </div>
                       )}
 

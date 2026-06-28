@@ -7,7 +7,7 @@ const corsHeaders = {
 
 /** Extended strategy params — strategy_type drives which signal logic is used */
 interface StrategyParams {
-  strategy_type: 'rsi_ema' | 'supertrend' | 'smc' | 'mixed';
+  strategy_type: 'rsi_ema' | 'supertrend' | 'smc' | 'mixed' | 'custom';
   // RSI / EMA (used when strategy_type = 'rsi_ema' or 'mixed')
   rsi_length: number;
   overbought: number;
@@ -148,7 +148,7 @@ async function callGemini(
 Return a JSON object with EXACTLY this structure (no markdown, no code blocks, just raw JSON):
 {
   "params": {
-    "strategy_type": "rsi_ema" or "supertrend" or "smc" or "mixed",
+    "strategy_type": "rsi_ema" or "supertrend" or "smc" or "mixed" or "custom",
     "rsi_length": <number or null>,
     "overbought": <number or null>,
     "oversold": <number or null>,
@@ -179,7 +179,7 @@ IMPORTANT RULES:
 - For ema_fast/ema_slow: find the SMALLEST and LARGEST EMA period values respectively.
 - If the strategy has BOTH long AND short entries, set trade_direction = "both"
 - For timeframe: look for input.timeframe() or comments mentioning TF. Return null if not found.
-- Only include indicators actually present in the code.
+- Only include indicators actually present in the code. If the strategy does NOT explicitly use RSI, EMA, Supertrend, or SMC logic, you MUST set strategy_type to "custom".
 
 Current regex extraction (for reference/verification):
 - RSI Length: ${regexParams.rsi_length}, Overbought: ${regexParams.overbought}, Oversold: ${regexParams.oversold}
@@ -233,7 +233,7 @@ function detectStrategyType(code: string): StrategyParams['strategy_type'] {
   if (hasSupertrend) return 'supertrend';
   if (hasSMC) return 'smc';
   if (hasRSI || hasEMACross) return 'rsi_ema';
-  return 'rsi_ema'; // safe fallback
+  return 'custom'; // fallback to custom if no standard indicators are detected
 }
 
 // ─── Parameter Extraction ─────────────────────────────────────────────────────
