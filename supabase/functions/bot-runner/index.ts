@@ -5,8 +5,10 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
  *  and runs the strategy logic (same as execute-strategy) for each.
  */
 
-const BINANCE_BASE_REAL = 'https://api.binance.com';
-const BINANCE_BASE_TEST = 'https://testnet.binance.vision';
+const BASE_SPOT_REAL = 'https://api.binance.com';
+const BASE_SPOT_TEST = 'https://testnet.binance.vision';
+const BASE_FUTURES_REAL = 'https://fapi.binance.com';
+const BASE_FUTURES_TEST = 'https://testnet.binancefuture.com';
 const RECV_WINDOW = '5000';
 
 const corsHeaders = {
@@ -71,8 +73,8 @@ async function signedPost(base: string, path: string, apiKey: string, secret: st
   return j;
 }
 
-async function fetchKlines(base: string, symbol: string, interval: string, limit: number): Promise<OHLCV[]> {
-  const url = `${base}/api/v3/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&limit=${limit}`;
+async function fetchKlines(base: string, prefix: string, symbol: string, interval: string, limit: number): Promise<OHLCV[]> {
+  const url = `${base}${prefix}/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&limit=${limit}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`Klines fetch failed: ${res.status}`);
   const raw: unknown[][] = await res.json();
@@ -254,11 +256,11 @@ function evaluateSignal(candles: OHLCV[], p: StrategyParams): SignalResult {
   return { signal: 'HOLD', reason: `RSI=${rsi} | no entry condition met`, rsi, ema_fast: emaF, ema_slow: emaS, price };
 }
 
-async function calcQtyForSymbol(base: string, sym: string, price: number, pct: number, fixedUsdt: number | null): Promise<number> {
+async function calcQtyForSymbol(base: string, prefix: string, sym: string, price: number, pct: number, fixedUsdt: number | null): Promise<number> {
   const budget = fixedUsdt ? fixedUsdt : 1000 * (pct / 100);
   const rawQty = budget / price;
   try {
-    const infoRes = await fetch(`${base}/api/v3/exchangeInfo?symbol=${sym.toUpperCase()}`);
+    const infoRes = await fetch(`${base}${prefix}/exchangeInfo?symbol=${sym.toUpperCase()}`);
     const infoData = await infoRes.json();
     const filters = infoData?.symbols?.[0]?.filters ?? [];
     const lotFilter = filters.find((f: { filterType: string }) => f.filterType === 'LOT_SIZE');
@@ -314,7 +316,7 @@ Deno.serve(async (req) => {
         // 3. Load user settings
         const { data: settings } = await client
           .from('user_settings')
-          .select('binance_api_key, binance_api_secret, use_testnet, bot_enabled, position_size_pct, stop_loss_pct, take_profit_pct')
+          .select('binance_api_key, binance_api_secret, use_testnet, bot_enabled, trading_mode, position_size_pct, stop_loss_pct, take_profit_pct')
           .eq('user_id', userId)
           .maybeSingle();
 
@@ -322,7 +324,16 @@ Deno.serve(async (req) => {
         if (settings.bot_enabled === false) continue;
 
         const useTestnet: boolean = settings.use_testnet ?? true;
-        const base = useTestnet ? BINANCE_BASE_TEST : BINANCE_BASE_REAL;
+        const tradingMode = settings.trading_mode === 'futures' ? 'futures' : 'spot';
+        let base = '';
+        let prefix = '';
+        if (tradingMode === 'futures') {
+          base = useTestnet ? BASE_FUTURES_TEST : BASE_FUTURES_REAL;
+          prefix = '/fapi/v1';
+        } else {
+          base = useTestnet ? BASE_SPOT_TEST : BASE_SPOT_REAL;
+          prefix = '/api/v3';
+        }
 
         // Risk priority: per-strategy > global
         const effectiveSL: number = strategy.stop_loss_pct ?? settings.stop_loss_pct ?? 2;
@@ -344,7 +355,7 @@ Deno.serve(async (req) => {
             const interval = TF_INTERVAL[tf] ?? '1h';
             const stLen = params.st_lookback ?? 10;
             const klineLimit = Math.max(params.rsi_length + 10, params.ema_slow + 10, stLen * 3, 60);
-            const candles = await fetchKlines(base, sym, interval, klineLimit);
+            const candles = await fetchKlines(base, prefix, sym, interval, klineLimit);
 
             // 5. Evaluate signal
             const result = evaluateSignal(candles, params);
@@ -373,10 +384,10 @@ Deno.serve(async (req) => {
 
             // 7. Place order
             const side = result.signal as 'BUY' | 'SELL';
-            const qty = await calcQtyForSymbol(base, sym, result.price, effectiveSize, tradeAmountUsdt);
+            const qty = await calcQtyForSymbol(base, prefix, sym, result.price, effectiveSize, tradeAmountUsdt);
             let order: Record<string,unknown> | null = null;
             try {
-              order = await signedPost(base, '/api/v3/order', settings.binance_api_key, settings.binance_api_secret, {
+              order = await signedPost(base, `${prefix}/order`, settings.binance_api_key, settings.binance_api_secret, {
                 symbol: sym.toUpperCase(), side, type: 'MARKET', quantity: String(qty),
               });
             } catch (e) {
