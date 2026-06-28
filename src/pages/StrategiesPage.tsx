@@ -125,7 +125,8 @@ export default function StrategiesPage() {
     if (!form.pinescript_code.trim()) return toast.error('PineScript code is required');
     setSaving(true);
     try {
-      const { error } = await createStrategy(form);
+      const { use_ai, ...strategyData } = form;
+      const { error } = await createStrategy(strategyData);
       if (error) {
         throw new Error(error);
       }
