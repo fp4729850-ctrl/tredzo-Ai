@@ -254,12 +254,24 @@ function evaluateSignal(candles: OHLCV[], p: StrategyParams): SignalResult {
   return { signal: 'HOLD', reason: `RSI=${rsi} | no entry condition met`, rsi, ema_fast: emaF, ema_slow: emaS, price };
 }
 
-function calcQty(price: number, pct: number, fixedUsdt: number | null): number {
+async function calcQtyForSymbol(base: string, sym: string, price: number, pct: number, fixedUsdt: number | null): Promise<number> {
   const budget = fixedUsdt ? fixedUsdt : 1000 * (pct / 100);
-  const qty = budget / price;
-  if (price > 1000) return +qty.toFixed(5);
-  if (price > 1) return +qty.toFixed(3);
-  return +qty.toFixed(1);
+  const rawQty = budget / price;
+  try {
+    const infoRes = await fetch(`${base}/api/v3/exchangeInfo?symbol=${sym.toUpperCase()}`);
+    const infoData = await infoRes.json();
+    const filters = infoData?.symbols?.[0]?.filters ?? [];
+    const lotFilter = filters.find((f: { filterType: string }) => f.filterType === 'LOT_SIZE');
+    const stepSize: string = lotFilter?.stepSize ?? '1';
+    const decimals = stepSize.includes('.') ? stepSize.split('.')[1].replace(/0+$/, '').length : 0;
+    const factor = Math.pow(10, decimals);
+    return Math.floor(rawQty * factor) / factor;
+  } catch {
+    // fallback: basic rounding if exchange info fails
+    if (price > 1000) return +rawQty.toFixed(5);
+    if (price > 1) return +rawQty.toFixed(3);
+    return Math.floor(rawQty);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -361,7 +373,7 @@ Deno.serve(async (req) => {
 
             // 7. Place order
             const side = result.signal as 'BUY' | 'SELL';
-            const qty = calcQty(result.price, effectiveSize, tradeAmountUsdt);
+            const qty = await calcQtyForSymbol(base, sym, result.price, effectiveSize, tradeAmountUsdt);
             let order: Record<string,unknown> | null = null;
             try {
               order = await signedPost(base, '/api/v3/order', settings.binance_api_key, settings.binance_api_secret, {
