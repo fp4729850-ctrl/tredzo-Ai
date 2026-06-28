@@ -359,6 +359,11 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
   const [candles, setCandles] = useState<OHLCVBar[]>([]);
   // keep ref in sync with state
   useEffect(() => { candlesRef.current = candles; }, [candles]);
+  
+  // Track what data the chart is CURRENTLY displaying so WS doesn't corrupt it during transition
+  const loadedSymbolRef = useRef(activeSymbol);
+  const loadedTFRef = useRef(activeTF);
+
   const [signals, setSignals] = useState<SignalPoint[]>([]);
   // Strategy backtest results (computed client-side from riskConfig)
   const [strategySignals, setStrategySignals] = useState<StrategySignalResult[]>([]);
@@ -381,6 +386,11 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
         fetchBinanceKlines(activeSymbol, interval, limit),
         fetchStrategySignals(strategyId, activeSymbol),
       ]);
+      
+      // Update loaded refs so WS knows it can start updating this data
+      loadedSymbolRef.current = activeSymbol;
+      loadedTFRef.current = activeTF;
+      
       setCandles(bars);
       setSignals(sigs);
       setDatasetId(prev => prev + 1); // trigger chart rebuild on fresh data load
@@ -463,6 +473,12 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
 
           // Update live price display
           setLastPrice(bar.close);
+
+          // Ignore ticks if the chart is currently transitioning to a new TF/Symbol
+          // Otherwise lightweight-charts crashes due to timestamp mismatch
+          if (loadedSymbolRef.current !== activeSymbol || loadedTFRef.current !== activeTF) {
+            return;
+          }
 
           // Update candle series directly (no full re-render)
           if (candleSeriesRef.current) {
