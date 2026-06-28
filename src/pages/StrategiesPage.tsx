@@ -1012,17 +1012,16 @@ export default function StrategiesPage() {
                         </div>
                         <div className="space-y-1.5">
                           {customInputs.map((input, idx) => {
-                            const isSymbolField = input.name.toLowerCase().includes('symbol') || input.name.toLowerCase().includes('ticker');
-                            const displayVal = isSymbolField
-                              ? (selectedStrategy.symbols?.[0] ?? selectedStrategy.symbol ?? 'BTCUSDT')
-                              : (input.value !== undefined ? String(input.value) : String(input.defval));
+                            // Hide anything that looks like a symbol picker
+                            const n = input.name.toLowerCase();
+                            const isSymbolField = n.includes('symbol') || n.includes('ticker') || n.includes('coin') || n.includes('asset') || input.defval === 'ETHUSDT';
+                            if (isSymbolField) return null;
 
                             return (
                               <div key={idx} className="flex items-center justify-between gap-3 rounded bg-input/40 px-2 py-1.5">
                                 <Label className="text-[11px] text-foreground font-medium flex-1 truncate" title={input.name}>{input.name}</Label>
                                 {input.type === 'bool' ? (
                                   <Switch
-                                    disabled={isSymbolField}
                                     checked={input.value !== undefined ? Boolean(input.value) : Boolean(input.defval)}
                                     onCheckedChange={(checked) => {
                                       setCustomInputs(prev => { const u = [...prev]; u[idx] = { ...u[idx], value: checked }; return u; });
@@ -1032,11 +1031,9 @@ export default function StrategiesPage() {
                                   <Input
                                     type={input.type === 'string' ? 'text' : 'number'}
                                     step={input.type === 'float' ? '0.1' : '1'}
-                                    value={displayVal}
-                                    readOnly={isSymbolField}
-                                    className={`h-7 w-24 bg-input border-border text-xs font-mono text-right ${isSymbolField ? 'opacity-50 cursor-not-allowed text-primary' : ''}`}
+                                    value={input.value !== undefined ? String(input.value) : String(input.defval)}
+                                    className="h-7 w-24 bg-input border-border text-xs font-mono text-right"
                                     onChange={(e) => {
-                                      if (isSymbolField) return;
                                       setCustomInputs(prev => {
                                         const u = [...prev];
                                         if (input.type === 'int') u[idx] = { ...u[idx], value: parseInt(e.target.value) || 0 };
