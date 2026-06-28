@@ -94,6 +94,9 @@ export default function StrategiesPage() {
     strategy_type: 'rsi_ema',
   });
   const [savingRisk, setSavingRisk] = useState(false);
+  const [savingRiskAll, setSavingRiskAll] = useState(false);
+  // Local editable state for custom_inputs (from PineScript dynamic settings)
+  const [customInputs, setCustomInputs] = useState<Array<{ name: string; type: string; defval: any; value?: any }>>([]);
   const [justAnalyzedId, setJustAnalyzedId] = useState<string | null>(null);
   const riskPanelRef = useRef<HTMLDivElement>(null);
   const [pnlMap, setPnlMap] = useState<Record<string, { totalTrades: number; wins: number; realizedPnlPct: number; openCount: number }>>({});
@@ -198,6 +201,8 @@ export default function StrategiesPage() {
       trade_direction: p?.trade_direction ?? 'both',
       strategy_type: p?.strategy_type ?? 'rsi_ema',
     });
+    // Sync custom_inputs local state
+    setCustomInputs(p?.custom_inputs ? JSON.parse(JSON.stringify(p.custom_inputs)) : []);
   }, []);
 
   const runAnalyze = async (strategy: Strategy, showToast = true, useAI: boolean = true) => {
@@ -347,6 +352,8 @@ export default function StrategiesPage() {
         st_multiplier: n(riskForm.st_multiplier) ?? existingParams.st_multiplier ?? 2.0,
         st_lookback:   n(riskForm.st_lookback)   ?? existingParams.st_lookback   ?? 10,
         trade_direction: riskForm.trade_direction,
+        // ✅ Save user-edited custom_inputs
+        custom_inputs: customInputs.length > 0 ? customInputs : existingParams.custom_inputs,
       };
 
       const patch: Partial<Strategy> = {
@@ -400,6 +407,36 @@ export default function StrategiesPage() {
       toast.error(`Failed to save risk settings: ${e.message || e}`);
     } finally {
       setSavingRisk(false);
+    }
+  };
+
+  // ── Apply current Risk Settings to ALL strategies ──────────────────────
+  const handleSaveRiskForAll = async () => {
+    if (strategies.length === 0) return;
+    setSavingRiskAll(true);
+    const n = (v: string) => v !== '' ? parseFloat(v) : null;
+    try {
+      const patch: Partial<Strategy> = {
+        stop_loss_pct: n(riskForm.stop_loss_pct),
+        take_profit_pct: n(riskForm.take_profit_pct),
+        position_size_pct: n(riskForm.position_size_pct),
+        tp1_pct: n(riskForm.tp1_pct),
+        tp2_pct: n(riskForm.tp2_pct),
+        tp3_pct: n(riskForm.tp3_pct),
+        tp1_size_pct: n(riskForm.tp1_size_pct),
+        tp2_size_pct: n(riskForm.tp2_size_pct),
+        tp3_size_pct: n(riskForm.tp3_size_pct),
+        trade_amount_usdt: n(riskForm.trade_amount_usdt),
+      };
+      await Promise.all(strategies.map(s => updateStrategy(s.id, patch)));
+      toast.success(`✅ Risk Settings applied to all ${strategies.length} strategies!`, { icon: '🌐' });
+      const updated = await getStrategies();
+      setStrategies(updated);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Failed: ${msg}`);
+    } finally {
+      setSavingRiskAll(false);
     }
   };
 
@@ -987,28 +1024,30 @@ export default function StrategiesPage() {
                           <Badge variant="outline" className="text-[10px] border-primary/30 text-primary ml-auto">From PineScript</Badge>
                         </div>
                         <div className="space-y-1.5">
-                          {selectedStrategy.strategy_params.custom_inputs.map((input, idx) => (
+                          {customInputs.map((input, idx) => (
                             <div key={idx} className="flex items-center justify-between gap-3 rounded bg-input/40 px-2 py-1.5">
                               <Label className="text-[11px] text-foreground font-medium flex-1 truncate" title={input.name}>{input.name}</Label>
                               {input.type === 'bool' ? (
                                 <Switch
                                   checked={input.value !== undefined ? Boolean(input.value) : Boolean(input.defval)}
                                   onCheckedChange={(checked) => {
-                                    const updatedInputs = [...(selectedStrategy.strategy_params?.custom_inputs || [])];
-                                    updatedInputs[idx].value = checked;
+                                    setCustomInputs(prev => { const u = [...prev]; u[idx] = { ...u[idx], value: checked }; return u; });
                                   }}
                                 />
                               ) : (
                                 <Input
                                   type={input.type === 'string' ? 'text' : 'number'}
                                   step={input.type === 'float' ? '0.1' : '1'}
-                                  defaultValue={input.value !== undefined ? String(input.value) : String(input.defval)}
+                                  value={input.value !== undefined ? String(input.value) : String(input.defval)}
                                   className="h-7 w-24 bg-input border-border text-xs font-mono text-right"
                                   onChange={(e) => {
-                                    const updatedInputs = [...(selectedStrategy.strategy_params?.custom_inputs || [])];
-                                    if (input.type === 'int') updatedInputs[idx].value = parseInt(e.target.value) || 0;
-                                    else if (input.type === 'float') updatedInputs[idx].value = parseFloat(e.target.value) || 0;
-                                    else updatedInputs[idx].value = e.target.value;
+                                    setCustomInputs(prev => {
+                                      const u = [...prev];
+                                      if (input.type === 'int') u[idx] = { ...u[idx], value: parseInt(e.target.value) || 0 };
+                                      else if (input.type === 'float') u[idx] = { ...u[idx], value: parseFloat(e.target.value) || 0 };
+                                      else u[idx] = { ...u[idx], value: e.target.value };
+                                      return u;
+                                    });
                                   }}
                                 />
                               )}
@@ -1095,10 +1134,16 @@ export default function StrategiesPage() {
                         {selectedStrategy.position_size_pct ? ` Size: ${selectedStrategy.position_size_pct}%` : ''}
                       </p>
                     )}
-                    <Button size="sm" onClick={handleSaveRisk} disabled={savingRisk} className="h-8 gap-1.5 w-full">
-                      {savingRisk ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                      Save Risk Settings
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={handleSaveRisk} disabled={savingRisk} className="h-8 gap-1.5 flex-1">
+                        {savingRisk ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                        Save Risk Settings
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={handleSaveRiskForAll} disabled={savingRiskAll} className="h-8 gap-1.5 border-primary/50 text-primary hover:bg-primary/10" title="Apply these risk settings to ALL strategies">
+                        {savingRiskAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="text-xs">🌐</span>}
+                        All
+                      </Button>
+                    </div>
                   </div>
                   {/* AI Interpretation */}
                   {selectedStrategy.ai_interpretation && (
