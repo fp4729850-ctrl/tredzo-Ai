@@ -99,17 +99,36 @@ export default function SettingsPage() {
     try {
       // Fetch current price to calculate quantity from USDT amount
       const base = settings.use_testnet ? 'https://testnet.binance.vision' : 'https://api.binance.com';
-      const priceRes = await fetch(`${base}/api/v3/ticker/price?symbol=${manualSymbol.toUpperCase()}`);
+      const sym = manualSymbol.toUpperCase();
+
+      // Fetch price + exchange info in parallel
+      const [priceRes, infoRes] = await Promise.all([
+        fetch(`${base}/api/v3/ticker/price?symbol=${sym}`),
+        fetch(`${base}/api/v3/exchangeInfo?symbol=${sym}`),
+      ]);
       const priceData = await priceRes.json();
+      const infoData = await infoRes.json();
+
       const price = parseFloat(priceData.price);
       if (!price || price <= 0) throw new Error('Could not fetch price');
-      const qty = Math.floor((usdtAmount / price) * 1000) / 1000; // 3 decimal places
+
+      // Get LOT_SIZE stepSize to determine correct decimal precision
+      const filters = infoData?.symbols?.[0]?.filters ?? [];
+      const lotFilter = filters.find((f: {filterType: string}) => f.filterType === 'LOT_SIZE');
+      const stepSize: string = lotFilter?.stepSize ?? '1';
+      const decimals = stepSize.includes('.') ? stepSize.split('.')[1].replace(/0+$/, '').length : 0;
+
+      const rawQty = usdtAmount / price;
+      const factor = Math.pow(10, decimals);
+      const qty = Math.floor(rawQty * factor) / factor;
+
+      if (qty <= 0) throw new Error(`Quantity too small. Try a larger USDT amount.`);
 
       const payload = {
         action: 'create-order' as const,
         testnet: settings.use_testnet ?? true,
         tradingMode: (settings.trading_mode ?? 'spot') as 'spot' | 'futures',
-        symbol: manualSymbol.toUpperCase(),
+        symbol: sym,
         side,
         type: 'MARKET' as const,
         quantity: qty,
@@ -121,7 +140,7 @@ export default function SettingsPage() {
         toast.error(`Order failed: ${error}`);
         setManualResult(`❌ Error: ${error}`);
       } else {
-        toast.success(`${side} order executed! ${usdtAmount} USDT → ${qty} coins at $${price}`, { icon: '🚀' });
+        toast.success(`${side} executed! ${usdtAmount} USDT → ${qty} ${sym.replace('USDT','')} @ $${price}`, { icon: '🚀' });
         setManualResult(JSON.stringify(data, null, 2));
       }
     } catch (e) {
