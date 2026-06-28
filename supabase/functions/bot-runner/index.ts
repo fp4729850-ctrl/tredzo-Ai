@@ -242,8 +242,8 @@ function evaluateSignal(candles: OHLCV[], p: StrategyParams): SignalResult {
   return { signal: 'HOLD', reason: `RSI=${rsi} | no entry condition met`, rsi, ema_fast: emaF, ema_slow: emaS, price };
 }
 
-function calcQty(price: number, pct: number): number {
-  const budget = 1000 * (pct / 100);
+function calcQty(price: number, pct: number, fixedUsdt: number | null): number {
+  const budget = fixedUsdt ? fixedUsdt : 1000 * (pct / 100);
   const qty = budget / price;
   if (price > 1000) return +qty.toFixed(5);
   if (price > 1) return +qty.toFixed(3);
@@ -307,6 +307,7 @@ Deno.serve(async (req) => {
         const tp1: number|null = strategy.tp1_pct ?? null;
         const tp2: number|null = strategy.tp2_pct ?? null;
         const tp3: number|null = strategy.tp3_pct ?? null;
+        const tradeAmountUsdt: number|null = strategy.trade_amount_usdt ?? null;
 
         // 4. Fetch klines (need OHLCV for Supertrend ATR calc)
         const interval = TF_INTERVAL[tf] ?? '1h';
@@ -330,7 +331,7 @@ Deno.serve(async (req) => {
 
         // 7. Place order
         const side = result.signal as 'BUY' | 'SELL';
-        const qty = calcQty(result.price, effectiveSize);
+        const qty = calcQty(result.price, effectiveSize, tradeAmountUsdt);
         let order: Record<string,unknown> | null = null;
         try {
           order = await signedPost(base, '/api/v3/order', settings.binance_api_key, settings.binance_api_secret, {
