@@ -321,90 +321,114 @@ Deno.serve(async (req) => {
         const tp3: number|null = strategy.tp3_pct ?? null;
         const tradeAmountUsdt: number|null = strategy.trade_amount_usdt ?? null;
 
-        // 4. Fetch klines (need OHLCV for Supertrend ATR calc)
-        const interval = TF_INTERVAL[tf] ?? '1h';
-        const stLen = params.st_lookback ?? 10;
-        const klineLimit = Math.max(params.rsi_length + 10, params.ema_slow + 10, stLen * 3, 60);
-        const candles = await fetchKlines(base, params.symbol, interval, klineLimit);
+        // ✅ Run for ALL active symbols in the strategy
+        const symbolsToRun = strategy.symbols && strategy.symbols.length > 0 
+          ? strategy.symbols 
+          : [params.symbol ?? 'BTCUSDT'];
 
-        // 5. Evaluate signal (passes full candles for Supertrend)
-        const result = evaluateSignal(candles, params);
+        for (const sym of symbolsToRun) {
+          try {
+            // 4. Fetch klines
+            const interval = TF_INTERVAL[tf] ?? '1h';
+            const stLen = params.st_lookback ?? 10;
+            const klineLimit = Math.max(params.rsi_length + 10, params.ema_slow + 10, stLen * 3, 60);
+            const candles = await fetchKlines(base, sym, interval, klineLimit);
+
+            // 5. Evaluate signal
+            const result = evaluateSignal(candles, params);
+            const ts = new Date().toISOString();
+
+            results.push({ strategyId: strategy.id, userId, signal: result.signal, symbol: sym, reason: result.reason });
+
+            if (result.signal === 'HOLD') continue;
+
+            // ✅ Deduplication per-symbol using signals table
+            const { data: lastDbSignal } = await client
+              .from('signals')
+              .select('direction')
+              .eq('strategy_id', strategy.id)
+              .eq('symbol', sym)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            const lastSignalDir = lastDbSignal ? (lastDbSignal.direction === 'buy' ? 'BUY' : 'SELL') : null;
+
+            if (lastSignalDir === result.signal) {
+              console.log(`[bot-runner] Skipping duplicate ${result.signal} for ${strategy.id} on ${sym} — already traded this flip`);
+              continue;
+            }
+
+            // 7. Place order
+            const side = result.signal as 'BUY' | 'SELL';
+            const qty = calcQty(result.price, effectiveSize, tradeAmountUsdt);
+            let order: Record<string,unknown> | null = null;
+            try {
+              order = await signedPost(base, '/api/v3/order', settings.binance_api_key, settings.binance_api_secret, {
+                symbol: sym.toUpperCase(), side, type: 'MARKET', quantity: String(qty),
+              });
+            } catch (e) {
+              console.error(`[bot-runner] Order failed for ${strategy.id} on ${sym}: ${(e as Error).message}`);
+            }
+
+            // 8. Log trade
+            if (order) {
+              const tpLevels = [tp1, tp2, tp3].filter(Boolean);
+              const multiTpNote = tpLevels.length > 1
+                ? ` | TP: ${tpLevels.map((t,i) => `TP${i+1}=${t}%`).join(', ')}`
+                : '';
+              await client.from('trades').insert({
+                user_id: userId, signal_id: null, symbol: sym,
+                direction: side === 'BUY' ? 'buy' : 'sell',
+                entry_price: result.price, quantity: qty,
+                stop_loss: result.price * (1 - effectiveSL / 100),
+                take_profit: result.price * (1 + effectiveTP / 100),
+                status: 'open', binance_order_id: String(order.orderId ?? ''), opened_at: ts,
+              });
+              await client.from('signals').insert({
+                user_id: userId, strategy_id: strategy.id, symbol: sym,
+                direction: side === 'BUY' ? 'buy' : 'sell',
+                confidence: 85, entry_price: result.price,
+                stop_loss: result.price * (1 - effectiveSL / 100),
+                take_profit: result.price * (1 + effectiveTP / 100),
+                timeframe: tf, reason: result.reason + multiTpNote, status: 'executed',
+              });
+            }
+
+            // 9. Send notification
+            fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-notification`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              },
+              body: JSON.stringify({
+                userId,
+                signal: result.signal,
+                symbol: sym,
+                price: result.price,
+                reason: result.reason,
+                timeframe: tf,
+                strategyName: strategy.name ?? 'Strategy',
+                sl: result.price * (1 - effectiveSL / 100),
+                tp1: tp1 ? result.price * (1 + tp1 / 100) : null,
+                tp2: tp2 ? result.price * (1 + tp2 / 100) : null,
+                tp3: tp3 ? result.price * (1 + tp3 / 100) : null,
+                mode: useTestnet ? 'testnet' : 'real',
+              }),
+            }).catch(() => {});
+            
+          } catch (e) {
+            console.error(`[bot-runner] Error on strategy ${strategy.id} for symbol ${sym}: ${(e as Error).message}`);
+          }
+        }
+
+        // Update last_executed_at (we don't need last_signal column anymore)
         const ts = new Date().toISOString();
-
-        // 6. Always update last_executed_at + last_signal
         await client.from('strategies').update({
           last_executed_at: ts,
-          last_signal: result.signal,
         }).eq('id', strategy.id);
 
-        results.push({ strategyId: strategy.id, userId, signal: result.signal, symbol: params.symbol, reason: result.reason });
-
-        if (result.signal === 'HOLD') continue;
-
-        // ✅ Deduplication: skip if last trade was same direction (same flip already traded)
-        if (strategy.last_signal === result.signal) {
-          console.log(`[bot-runner] Skipping duplicate ${result.signal} for ${strategy.id} — already traded this flip`);
-          continue;
-        }
-
-        // 7. Place order
-        const side = result.signal as 'BUY' | 'SELL';
-        const qty = calcQty(result.price, effectiveSize, tradeAmountUsdt);
-        let order: Record<string,unknown> | null = null;
-        try {
-          order = await signedPost(base, '/api/v3/order', settings.binance_api_key, settings.binance_api_secret, {
-            symbol: params.symbol.toUpperCase(), side, type: 'MARKET', quantity: String(qty),
-          });
-        } catch (e) {
-          console.error(`[bot-runner] Order failed for ${strategy.id}: ${(e as Error).message}`);
-        }
-
-        // 8. Log trade
-        if (order) {
-          const tpLevels = [tp1, tp2, tp3].filter(Boolean);
-          const multiTpNote = tpLevels.length > 1
-            ? ` | TP: ${tpLevels.map((t,i) => `TP${i+1}=${t}%`).join(', ')}`
-            : '';
-          await client.from('trades').insert({
-            user_id: userId, signal_id: null, symbol: params.symbol,
-            direction: side === 'BUY' ? 'buy' : 'sell',
-            entry_price: result.price, quantity: qty,
-            stop_loss: result.price * (1 - effectiveSL / 100),
-            take_profit: result.price * (1 + effectiveTP / 100),
-            status: 'open', binance_order_id: String(order.orderId ?? ''), opened_at: ts,
-          });
-          await client.from('signals').insert({
-            user_id: userId, strategy_id: strategy.id, symbol: params.symbol,
-            direction: side === 'BUY' ? 'buy' : 'sell',
-            confidence: 85, entry_price: result.price,
-            stop_loss: result.price * (1 - effectiveSL / 100),
-            take_profit: result.price * (1 + effectiveTP / 100),
-            timeframe: tf, reason: result.reason + multiTpNote, status: 'executed',
-          });
-        }
-
-        // 9. Send notification (fire-and-forget)
-        fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-notification`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-          },
-          body: JSON.stringify({
-            userId,
-            signal: result.signal,
-            symbol: params.symbol,
-            price: result.price,
-            reason: result.reason,
-            timeframe: tf,
-            strategyName: strategy.name ?? 'Strategy',
-            sl: result.price * (1 - effectiveSL / 100),
-            tp1: tp1 ? result.price * (1 + tp1 / 100) : null,
-            tp2: tp2 ? result.price * (1 + tp2 / 100) : null,
-            tp3: tp3 ? result.price * (1 + tp3 / 100) : null,
-            mode: useTestnet ? 'testnet' : 'real',
-          }),
-        }).catch(() => {});
       } catch (e) {
         console.error(`[bot-runner] Error on strategy ${strategy.id}: ${(e as Error).message}`);
       }

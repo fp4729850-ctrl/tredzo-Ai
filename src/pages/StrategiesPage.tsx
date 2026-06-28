@@ -967,20 +967,6 @@ export default function StrategiesPage() {
                           </div>
                         </div>
 
-                        <div className="space-y-1">
-                          <Label className="text-[11px] font-normal text-muted-foreground flex items-center gap-1">
-                            📈 Trading Symbol <span className="text-primary font-semibold">(Bot trades this pair)</span>
-                          </Label>
-                          <input
-                            type="text"
-                            value={riskForm.symbol ?? ''}
-                            onChange={e => setRiskForm(f => ({ ...f, symbol: e.target.value.toUpperCase() }))}
-                            placeholder="e.g. SOLUSDT, BTCUSDT, ETHUSDT"
-                            className="h-8 w-full rounded-md border border-primary/50 bg-input px-2 text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary uppercase"
-                          />
-                          <p className="text-[10px] text-muted-foreground">Change this to set which pair the bot will trade. Save to apply.</p>
-                        </div>
-
                         {(riskForm.strategy_type === 'rsi_ema' || riskForm.strategy_type === 'mixed') && (
                           <div className="space-y-1.5">
                             <span className="text-[11px] font-medium text-foreground flex items-center gap-1"><Activity className="h-3 w-3 text-primary" /> RSI Settings</span>
