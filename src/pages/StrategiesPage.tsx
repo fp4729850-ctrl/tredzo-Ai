@@ -1011,35 +1011,38 @@ export default function StrategiesPage() {
                           <Badge variant="outline" className="text-[10px] border-primary/30 text-primary ml-auto">From PineScript</Badge>
                         </div>
                         <div className="space-y-1.5">
-                          {customInputs.map((input, idx) => (
-                            <div key={idx} className="flex items-center justify-between gap-3 rounded bg-input/40 px-2 py-1.5">
-                              <Label className="text-[11px] text-foreground font-medium flex-1 truncate" title={input.name}>{input.name}</Label>
-                              {input.type === 'bool' ? (
-                                <Switch
-                                  checked={input.value !== undefined ? Boolean(input.value) : Boolean(input.defval)}
-                                  onCheckedChange={(checked) => {
-                                    setCustomInputs(prev => { const u = [...prev]; u[idx] = { ...u[idx], value: checked }; return u; });
-                                  }}
-                                />
-                              ) : (
-                                <Input
-                                  type={input.type === 'string' ? 'text' : 'number'}
-                                  step={input.type === 'float' ? '0.1' : '1'}
-                                  value={input.value !== undefined ? String(input.value) : String(input.defval)}
-                                  className="h-7 w-24 bg-input border-border text-xs font-mono text-right"
-                                  onChange={(e) => {
-                                    setCustomInputs(prev => {
-                                      const u = [...prev];
-                                      if (input.type === 'int') u[idx] = { ...u[idx], value: parseInt(e.target.value) || 0 };
-                                      else if (input.type === 'float') u[idx] = { ...u[idx], value: parseFloat(e.target.value) || 0 };
-                                      else u[idx] = { ...u[idx], value: e.target.value };
-                                      return u;
-                                    });
-                                  }}
-                                />
-                              )}
-                            </div>
-                          ))}
+                          {customInputs.map((input, idx) => {
+                            if (input.name.toLowerCase().includes('symbol')) return null;
+                            return (
+                              <div key={idx} className="flex items-center justify-between gap-3 rounded bg-input/40 px-2 py-1.5">
+                                <Label className="text-[11px] text-foreground font-medium flex-1 truncate" title={input.name}>{input.name}</Label>
+                                {input.type === 'bool' ? (
+                                  <Switch
+                                    checked={input.value !== undefined ? Boolean(input.value) : Boolean(input.defval)}
+                                    onCheckedChange={(checked) => {
+                                      setCustomInputs(prev => { const u = [...prev]; u[idx] = { ...u[idx], value: checked }; return u; });
+                                    }}
+                                  />
+                                ) : (
+                                  <Input
+                                    type={input.type === 'string' ? 'text' : 'number'}
+                                    step={input.type === 'float' ? '0.1' : '1'}
+                                    value={input.value !== undefined ? String(input.value) : String(input.defval)}
+                                    className="h-7 w-24 bg-input border-border text-xs font-mono text-right"
+                                    onChange={(e) => {
+                                      setCustomInputs(prev => {
+                                        const u = [...prev];
+                                        if (input.type === 'int') u[idx] = { ...u[idx], value: parseInt(e.target.value) || 0 };
+                                        else if (input.type === 'float') u[idx] = { ...u[idx], value: parseFloat(e.target.value) || 0 };
+                                        else u[idx] = { ...u[idx], value: e.target.value };
+                                        return u;
+                                      });
+                                    }}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                         <p className="text-[9px] text-muted-foreground">Changes to dynamic settings will be applied on next save.</p>
                       </div>
