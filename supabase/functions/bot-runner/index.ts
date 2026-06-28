@@ -104,9 +104,7 @@ function applyCustomInputOverrides(p: StrategyParams): StrategyParams {
 
   // Name → field mapping (case-insensitive, fuzzy)
   const mapping: Record<string, (v: number) => void> = {};
-  const strMapping: Record<string, (v: string) => void> = {};
   const set = (keys: string[], fn: (v: number) => void) => keys.forEach(k => mapping[k] = fn);
-  const setStr = (keys: string[], fn: (v: string) => void) => keys.forEach(k => strMapping[k] = fn);
 
   set(['rsi length', 'rsi_length', 'rsi period', 'rsilength'], v => { p.rsi_length = v; });
   set(['overbought', 'rsi overbought', 'ob'], v => { p.overbought = v; });
@@ -116,17 +114,16 @@ function applyCustomInputOverrides(p: StrategyParams): StrategyParams {
   set(['supertrend multiplier', 'st multiplier', 'st_multiplier', 'multiplier', 'atr multiplier', 'factor'], v => { p.st_multiplier = v; });
   set(['supertrend lookback', 'st lookback', 'st_lookback', 'atr length', 'atr period', 'supertrend length'], v => { p.st_lookback = v; });
 
-  // ✅ String overrides (symbol, ticker)
-  setStr(['symbol', 'ticker', 'pair', 'trading pair', 'asset', 'instrument'], v => { p.symbol = v.toUpperCase(); });
+  // NOTE: Symbol is intentionally NOT in overrides — strategy_params.symbol is the source of truth
+  // (set by user in UI Risk Settings, not from PineScript default inputs)
 
   for (const input of p.custom_inputs) {
     const val = input.value ?? input.defval;
     const nameKey = input.name.toLowerCase().trim();
     if (typeof val === 'number') {
       if (mapping[nameKey]) mapping[nameKey](val);
-    } else if (typeof val === 'string' && val.trim() !== '') {
-      if (strMapping[nameKey]) strMapping[nameKey](val.trim());
     }
+    // Strings like ETHUSDT from PineScript are intentionally skipped to not override user's symbol
   }
   return p;
 }
