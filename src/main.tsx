@@ -10,7 +10,15 @@ Sentry.init({
 });
 
 createRoot(document.getElementById("root")!).render(
-  <Sentry.ErrorBoundary fallback={<p>应用发生错误，请刷新页面重试</p>}>
+  <Sentry.ErrorBoundary 
+    fallback={({ error }) => (
+      <div style={{ backgroundColor: '#ff0000', color: '#ffffff', height: '100vh', padding: '20px', fontFamily: 'monospace', overflow: 'auto' }}>
+        <h2>Application Error</h2>
+        <pre>{error?.message || String(error)}</pre>
+        <pre style={{ marginTop: '20px', fontSize: '12px' }}>{error?.stack}</pre>
+      </div>
+    )}
+  >
     <AppWrapper>
       <App />
     </AppWrapper>
