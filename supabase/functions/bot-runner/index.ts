@@ -113,8 +113,8 @@ function applyCustomInputOverrides(p: StrategyParams): StrategyParams {
   set(['oversold', 'rsi oversold', 'os'], v => { p.oversold = v; });
   set(['ema fast', 'ema_fast', 'fast ema', 'fast period', 'ema fast period', 'fast length', 'short ema'], v => { p.ema_fast = v; });
   set(['ema slow', 'ema_slow', 'slow ema', 'slow period', 'ema slow period', 'slow length', 'long ema'], v => { p.ema_slow = v; });
-  set(['supertrend multiplier', 'st multiplier', 'st_multiplier', 'multiplier', 'atr multiplier', 'factor'], v => { p.st_multiplier = v; });
-  set(['supertrend lookback', 'st lookback', 'st_lookback', 'atr length', 'atr period', 'supertrend length'], v => { p.st_lookback = v; });
+  set(['supertrend multiplier', 'fast supertrend multiplier', 'st multiplier', 'st_multiplier', 'multiplier', 'atr multiplier', 'factor'], v => { p.st_multiplier = v; });
+  set(['supertrend lookback', 'fast supertrend lookback', 'st lookback', 'st_lookback', 'atr length', 'atr period', 'supertrend length'], v => { p.st_lookback = v; });
 
   // NOTE: Symbol is intentionally NOT in overrides — strategy_params.symbol is the source of truth
   // (set by user in UI Risk Settings, not from PineScript default inputs)
@@ -391,10 +391,12 @@ Deno.serve(async (req) => {
                 symbol: sym.toUpperCase(), side, type: 'MARKET', quantity: String(qty),
               });
             } catch (e) {
-              console.error(`[bot-runner] Order failed for ${strategy.id} on ${sym}: ${(e as Error).message}`);
+              const errMsg = (e as Error).message;
+              console.error(`[bot-runner] Order failed for ${strategy.id} on ${sym}: ${errMsg}`);
+              result.reason += ` | Order Failed: ${errMsg}`;
             }
 
-            // 8. Log trade
+            // 8. Log trade (only if successful)
             if (order) {
               const tpLevels = [tp1, tp2, tp3].filter(Boolean);
               const multiTpNote = tpLevels.length > 1
@@ -408,15 +410,17 @@ Deno.serve(async (req) => {
                 take_profit: result.price * (1 + effectiveTP / 100),
                 status: 'open', binance_order_id: String(order.orderId ?? ''), opened_at: ts,
               });
-              await client.from('signals').insert({
-                user_id: userId, strategy_id: strategy.id, symbol: sym,
-                direction: side === 'BUY' ? 'buy' : 'sell',
-                confidence: 85, entry_price: result.price,
-                stop_loss: result.price * (1 - effectiveSL / 100),
-                take_profit: result.price * (1 + effectiveTP / 100),
-                timeframe: tf, reason: result.reason + multiTpNote, status: 'executed',
-              });
             }
+
+            // 8b. Always log the signal, whether order succeeded or failed
+            await client.from('signals').insert({
+              user_id: userId, strategy_id: strategy.id, symbol: sym,
+              direction: side === 'BUY' ? 'buy' : 'sell',
+              confidence: 85, entry_price: result.price,
+              stop_loss: result.price * (1 - effectiveSL / 100),
+              take_profit: result.price * (1 + effectiveTP / 100),
+              timeframe: tf, reason: result.reason, status: order ? 'executed' : 'failed',
+            });
 
             // 9. Send notification
             fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-notification`, {
