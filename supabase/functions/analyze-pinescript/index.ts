@@ -240,30 +240,34 @@ function detectStrategyType(code: string): StrategyParams['strategy_type'] {
 // ─── Custom Inputs Extraction ─────────────────────────────────────────────────
 function extractCustomInputs(code: string) {
   const inputs = [];
-  const regex = /input(?:\.(int|float|bool|string))?\s*\(([^)]+)\)/g;
-  let match;
+  const lines = code.split('\n');
   let index = 0;
-  while ((match = regex.exec(code)) !== null) {
+  
+  for (const line of lines) {
+    if (!line.includes('input')) continue;
+    
+    const regex = /input(?:\.(int|float|bool|string))?\s*\(/;
+    const match = line.match(regex);
+    if (!match) continue;
+    
     const typeStr = match[1];
-    const argsStr = match[2];
     
-    let defvalStr = '';
     let titleStr = `Input ${index + 1}`;
-    
-    const titleMatch = argsStr.match(/(?:title\s*=\s*)?['"]([^'"]+)['"]/);
+    const titleMatch = line.match(/(?:title\s*=\s*)?['"]([^'"]+)['"]/);
     if (titleMatch) titleStr = titleMatch[1];
     
-    const defvalMatch = argsStr.match(/(?:defval\s*=\s*)?([^,]+)/);
-    if (defvalMatch) {
-      defvalStr = defvalMatch[1].trim();
+    let defvalStr = '';
+    const insideArgsMatch = line.match(/input(?:\.\w+)?\s*\(\s*([^,)]+)/);
+    if (insideArgsMatch) {
+      defvalStr = insideArgsMatch[1].trim();
       if (defvalStr.startsWith('title') || defvalStr.startsWith('"') || defvalStr.startsWith("'")) {
-        defvalStr = ''; // it was a title, not defval
+         defvalStr = ''; 
       }
     }
     
     let type = 'string';
-    if (typeStr === 'int' || (!typeStr && /^\d+$/.test(defvalStr))) type = 'int';
-    else if (typeStr === 'float' || (!typeStr && /^\d+\.\d+$/.test(defvalStr))) type = 'float';
+    if (typeStr === 'int' || (!typeStr && /^-?\d+$/.test(defvalStr))) type = 'int';
+    else if (typeStr === 'float' || (!typeStr && /^-?\d+\.\d+$/.test(defvalStr))) type = 'float';
     else if (typeStr === 'bool' || (!typeStr && (defvalStr === 'true' || defvalStr === 'false'))) type = 'bool';
     
     let defval: any = defvalStr.replace(/['"]/g, '');
