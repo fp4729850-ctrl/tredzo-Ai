@@ -349,6 +349,7 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
   const candleSeriesRef = useRef<any | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const userPannedRef = useRef<boolean>(false); // track if user manually scrolled
+  const candlesRef = useRef<OHLCVBar[]>([]); // ref so chart doesn't rebuild on every WS tick
 
   const [activeSymbol, setActiveSymbol] = useState(defaultSymbol || 'BTCUSDT');
   const [activeTF, setActiveTF] = useState(defaultTF || '1h');
@@ -356,6 +357,8 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [candles, setCandles] = useState<OHLCVBar[]>([]);
+  // keep ref in sync with state
+  useEffect(() => { candlesRef.current = candles; }, [candles]);
   const [signals, setSignals] = useState<SignalPoint[]>([]);
   // Strategy backtest results (computed client-side from riskConfig)
   const [strategySignals, setStrategySignals] = useState<StrategySignalResult[]>([]);
@@ -365,6 +368,8 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
   const [wsConnected, setWsConnected] = useState(false);
   // Latest live signal from strategy evaluation
   const [liveSignal, setLiveSignal] = useState<{ direction: 'buy' | 'sell'; price: number } | null>(null);
+
+  const [datasetId, setDatasetId] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -378,6 +383,7 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
       ]);
       setCandles(bars);
       setSignals(sigs);
+      setDatasetId(prev => prev + 1); // trigger chart rebuild on fresh data load
       if (bars.length > 0) {
         setLastPrice(bars[bars.length - 1].close);
         if (bars.length > 1) {
@@ -459,11 +465,7 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
           setLastPrice(bar.close);
 
           // Update candle series directly (no full re-render)
-          if (candleSeriesRef.current && chartRef.current) {
-            // If user has manually panned/zoomed, preserve their view position
-            const timeScale = chartRef.current.timeScale();
-            const savedRange = userPannedRef.current ? timeScale.getVisibleRange() : null;
-
+          if (candleSeriesRef.current) {
             candleSeriesRef.current.update({
               time: bar.time as Time,
               open: bar.open,
@@ -471,11 +473,6 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
               low: bar.low,
               close: bar.close,
             });
-
-            // Restore position if user had panned
-            if (savedRange) {
-              timeScale.setVisibleRange(savedRange);
-            }
           }
 
           // Update candles state so priceChange stays accurate
@@ -581,7 +578,7 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
     });
     candleSeriesRef.current = candleSeries;
 
-    const sorted = [...candles]
+    const sorted = [...candlesRef.current]
       .sort((a, b) => a.time - b.time)
       .filter((c, i, arr) => i === 0 || c.time !== arr[i - 1].time);
 
@@ -589,6 +586,36 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
       time: c.time as Time,
       open: c.open, high: c.high, low: c.low, close: c.close,
     })));
+
+    // Only fitContent on the very first load; after that, let user control the view
+    if (!userPannedRef.current) {
+      chart.timeScale().fitContent();
+    }
+
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        chart.applyOptions({ width: entry.contentRect.width });
+      }
+    });
+    ro.observe(el);
+
+    return () => {
+      ro.disconnect();
+      chart.remove();
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+    };
+  }, [datasetId]); // ONLY rebuild chart on fresh data load, not on every WS tick or signal change
+
+  // ── Separate useEffect for Markers & SL/TP lines ──
+  useEffect(() => {
+    const chart = chartRef.current;
+    const candleSeries = candleSeriesRef.current;
+    if (!chart || !candleSeries) return;
+
+    const sorted = [...candlesRef.current]
+      .sort((a, b) => a.time - b.time)
+      .filter((c, i, arr) => i === 0 || c.time !== arr[i - 1].time);
 
     // ── Strategy backtest markers (RSI+EMA signals) + DB trade markers ──
     const allMarkers: SeriesMarker<Time>[] = [];
@@ -674,6 +701,8 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
       (candleSeries as any)._markersPlugin.setMarkers([]);
     }
 
+    const addedLines: any[] = [];
+
     // ── SL / TP price lines for the LAST strategy signal ──
     if (strategySignals.length > 0) {
       const lastSig = strategySignals[strategySignals.length - 1];
@@ -693,6 +722,7 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
           slData.push({ time: sorted[sorted.length - 1].time as Time, value: lastSig.slPrice });
         }
         slLine.setData(slData);
+        addedLines.push(slLine);
       }
 
       const tpColors = ['#22c55e', '#4ade80', '#86efac'];
@@ -711,28 +741,15 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
           tpData.push({ time: sorted[sorted.length - 1].time as Time, value: tp });
         }
         tpLine.setData(tpData);
+        addedLines.push(tpLine);
       });
     }
 
-    // Only fitContent on the very first load; after that, let user control the view
-    if (!userPannedRef.current) {
-      chart.timeScale().fitContent();
-    }
-
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        chart.applyOptions({ width: entry.contentRect.width });
-      }
-    });
-    ro.observe(el);
-
     return () => {
-      ro.disconnect();
-      chart.remove();
-      chartRef.current = null;
-      candleSeriesRef.current = null;
+      // Clean up dynamic lines
+      addedLines.forEach(line => chart.removeSeries(line));
     };
-  }, [candles, signals, strategySignals, activeTF]);
+  }, [signals, strategySignals, datasetId]);
 
   const displaySymbol = activeSymbol.toUpperCase().replace('USDT', '/USDT');
   const shortLabel = (s: string) => s.replace('USDT', '');
