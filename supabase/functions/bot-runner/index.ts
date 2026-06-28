@@ -320,8 +320,14 @@ Deno.serve(async (req) => {
           .eq('user_id', userId)
           .maybeSingle();
 
-        if (!settings?.binance_api_key || !settings?.binance_api_secret) continue;
-        if (settings.bot_enabled === false) continue;
+        if (!settings?.binance_api_key || !settings?.binance_api_secret) {
+          results.push({ strategyId: strategy.id, userId, signal: 'HOLD', symbol: 'N/A', reason: `❌ No API keys in user_settings for userId=${userId}. has_settings=${!!settings}, has_key=${!!settings?.binance_api_key}` });
+          continue;
+        }
+        if (settings.bot_enabled === false) {
+          results.push({ strategyId: strategy.id, userId, signal: 'HOLD', symbol: 'N/A', reason: '❌ Bot is disabled in settings' });
+          continue;
+        }
 
         const useTestnet: boolean = settings.use_testnet ?? true;
         const tradingMode = settings.trading_mode === 'futures' ? 'futures' : 'spot';
@@ -365,12 +371,13 @@ Deno.serve(async (req) => {
 
             if (result.signal === 'HOLD') continue;
 
-            // ✅ Deduplication per-symbol using signals table
+            // ✅ Deduplication: only skip if last signal was successfully executed
             const { data: lastDbSignal } = await client
               .from('signals')
-              .select('direction')
+              .select('direction, status')
               .eq('strategy_id', strategy.id)
               .eq('symbol', sym)
+              .eq('status', 'executed')
               .order('created_at', { ascending: false })
               .limit(1)
               .maybeSingle();
@@ -378,7 +385,7 @@ Deno.serve(async (req) => {
             const lastSignalDir = lastDbSignal ? (lastDbSignal.direction === 'buy' ? 'BUY' : 'SELL') : null;
 
             if (lastSignalDir === result.signal) {
-              console.log(`[bot-runner] Skipping duplicate ${result.signal} for ${strategy.id} on ${sym} — already traded this flip`);
+              console.log(`[bot-runner] Skipping duplicate ${result.signal} for ${strategy.id} on ${sym} — already executed this flip`);
               continue;
             }
 
@@ -419,7 +426,7 @@ Deno.serve(async (req) => {
               confidence: 85, entry_price: result.price,
               stop_loss: result.price * (1 - effectiveSL / 100),
               take_profit: result.price * (1 + effectiveTP / 100),
-              timeframe: tf, reason: result.reason, status: order ? 'executed' : 'failed',
+              timeframe: tf, reason: result.reason, status: order ? 'executed' : 'cancelled',
             });
 
             // 9. Send notification
