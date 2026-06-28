@@ -260,8 +260,31 @@ export default function StrategiesPage() {
 
   // ── Helper: build chartRiskConfig from a strategy object ──────────────────
   const buildRiskConfig = useCallback((s: Strategy): StrategyRiskConfig | null => {
-    const p = s.strategy_params as StrategyParams | null;
+    let p = s.strategy_params as StrategyParams | null;
     if (!p) return null;
+
+    // Apply dynamic custom_inputs overrides
+    if (p.custom_inputs && p.custom_inputs.length > 0) {
+      p = { ...p }; // Shallow copy
+      const mapping: Record<string, (v: number) => void> = {};
+      const set = (keys: string[], fn: (v: number) => void) => keys.forEach(k => mapping[k] = fn);
+
+      set(['rsi length', 'rsi_length', 'rsi period', 'rsilength'], v => { p!.rsi_length = v; });
+      set(['overbought', 'rsi overbought', 'ob'], v => { p!.overbought = v; });
+      set(['oversold', 'rsi oversold', 'os'], v => { p!.oversold = v; });
+      set(['ema fast', 'ema_fast', 'fast ema', 'fast period', 'ema fast period', 'fast length', 'short ema'], v => { p!.ema_fast = v; });
+      set(['ema slow', 'ema_slow', 'slow ema', 'slow period', 'ema slow period', 'slow length', 'long ema'], v => { p!.ema_slow = v; });
+      set(['supertrend multiplier', 'st multiplier', 'st_multiplier', 'multiplier', 'atr multiplier', 'factor'], v => { p!.st_multiplier = v; });
+      set(['supertrend lookback', 'st lookback', 'st_lookback', 'atr length', 'atr period', 'supertrend length'], v => { p!.st_lookback = v; });
+
+      for (const input of p.custom_inputs) {
+        const val = input.value ?? input.defval;
+        if (typeof val !== 'number') continue;
+        const nameKey = input.name.toLowerCase().trim();
+        if (mapping[nameKey]) mapping[nameKey](val);
+      }
+    }
+
     const n = (v: string | number | null | undefined) =>
       v != null && v !== '' ? parseFloat(String(v)) : null;
     return {
