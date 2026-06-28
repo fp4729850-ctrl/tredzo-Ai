@@ -37,7 +37,15 @@ export interface UserSettings {
   updated_at: string;
 }
 
+export interface CustomInput {
+  name: string;
+  type: 'int' | 'float' | 'bool' | 'string';
+  defval: number | string | boolean;
+  value?: number | string | boolean;
+}
+
 export interface StrategyParams {
+  custom_inputs?: CustomInput[];
   strategy_type?: 'rsi_ema' | 'supertrend' | 'smc' | 'mixed';
   rsi_length: number;
   overbought: number;

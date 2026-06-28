@@ -66,7 +66,7 @@ export default function StrategiesPage() {
   const [interpreting, setInterpreting] = useState<string | null>(null);
   const [executing, setExecuting] = useState<string | null>(null);
 
-  const [form, setForm] = useState({ name: '', description: '', pinescript_code: SAMPLE_PINESCRIPT });
+  const [form, setForm] = useState({ name: '', description: '', pinescript_code: SAMPLE_PINESCRIPT, use_ai: true });
   const [saving, setSaving] = useState(false);
 
   // Per-strategy risk override state — includes multi-TP + indicator params
@@ -132,11 +132,11 @@ export default function StrategiesPage() {
       const strategies = await getStrategies();
       const saved = strategies[0]; // most recent
       if (saved) {
-        await runAnalyze(saved, false); // silent toast, full analysis
+        await runAnalyze(saved, false, form.use_ai); // silent toast, full analysis
       }
       toast.success('Strategy created and analyzed!');
       setDialogOpen(false);
-      setForm({ name: '', description: '', pinescript_code: SAMPLE_PINESCRIPT });
+      setForm({ name: '', description: '', pinescript_code: SAMPLE_PINESCRIPT, use_ai: true });
       await load();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -197,12 +197,12 @@ export default function StrategiesPage() {
     });
   }, []);
 
-  const runAnalyze = async (strategy: Strategy, showToast = true) => {
+  const runAnalyze = async (strategy: Strategy, showToast = true, useAI: boolean = true) => {
     setInterpreting(strategy.id);
     // Preserve the user's manually selected timeframe before analysis
     const userTimeframe = strategy.timeframe ?? null;
     const { data, error } = await supabase.functions.invoke('analyze-pinescript', {
-      body: { strategyId: strategy.id, code: strategy.pinescript_code },
+      body: { strategyId: strategy.id, code: strategy.pinescript_code, use_ai: useAI },
       method: 'POST',
     });
     if (error || !data?.interpretation) {
@@ -505,8 +505,20 @@ export default function StrategiesPage() {
                     placeholder="Paste your PineScript strategy here..."
                     value={form.pinescript_code}
                     onChange={e => setForm(f => ({ ...f, pinescript_code: e.target.value }))}
-                    rows={14}
+                    rows={12}
                     className="bg-input border-border font-mono text-xs resize-none"
+                  />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-border p-3 bg-card">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm">Enable AI Analysis</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Automatically detect RSI, EMA, and SMC logic. Disable to just use dynamic inputs.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.use_ai}
+                    onCheckedChange={(checked) => setForm(f => ({ ...f, use_ai: checked }))}
                   />
                 </div>
                 <div className="flex justify-end gap-2">
@@ -986,6 +998,49 @@ export default function StrategiesPage() {
                             <Code2 className="h-4 w-4 text-primary" />
                             This is a Custom Strategy. No AI indicator settings are displayed.
                           </p>
+                        </div>
+                      )}
+
+                      {/* Dynamic Custom Inputs */}
+                      {selectedStrategy?.strategy_params?.custom_inputs && selectedStrategy.strategy_params.custom_inputs.length > 0 && (
+                        <div className="space-y-2 pt-2 border-t border-border/50">
+                          <span className="text-[11px] font-medium text-foreground flex items-center gap-1">
+                            <Code2 className="h-3 w-3 text-primary" /> Dynamic Script Settings
+                          </span>
+                          <div className="grid grid-cols-2 gap-2">
+                            {selectedStrategy.strategy_params.custom_inputs.map((input, idx) => (
+                              <div key={idx} className="space-y-0.5">
+                                <Label className="text-[10px] text-muted-foreground truncate" title={input.name}>{input.name}</Label>
+                                {input.type === 'bool' ? (
+                                  <div className="h-7 flex items-center">
+                                    <Switch
+                                      checked={input.value !== undefined ? Boolean(input.value) : Boolean(input.defval)}
+                                      onCheckedChange={(checked) => {
+                                        // Update local form state for custom input
+                                        const updatedInputs = [...(selectedStrategy.strategy_params?.custom_inputs || [])];
+                                        updatedInputs[idx].value = checked;
+                                        // We don't have this in riskForm currently, so we update it directly in the DB when saved, or we can add it to riskForm.
+                                      }}
+                                    />
+                                  </div>
+                                ) : (
+                                  <Input
+                                    type={input.type === 'string' ? 'text' : 'number'}
+                                    step={input.type === 'float' ? '0.1' : '1'}
+                                    defaultValue={input.value !== undefined ? String(input.value) : String(input.defval)}
+                                    className="h-7 bg-input border-border text-xs font-mono"
+                                    onChange={(e) => {
+                                       const updatedInputs = [...(selectedStrategy.strategy_params?.custom_inputs || [])];
+                                       if (input.type === 'int') updatedInputs[idx].value = parseInt(e.target.value) || 0;
+                                       else if (input.type === 'float') updatedInputs[idx].value = parseFloat(e.target.value) || 0;
+                                       else updatedInputs[idx].value = e.target.value;
+                                    }}
+                                  />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-[9px] text-muted-foreground">Changes to dynamic settings will be applied on next save.</p>
                         </div>
                       )}
 

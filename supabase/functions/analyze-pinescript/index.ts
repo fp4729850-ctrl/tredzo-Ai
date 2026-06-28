@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const { strategyId, code } = await req.json();
+    const { strategyId, code, use_ai = true } = await req.json();
 
     if (!code) {
       return new Response(
@@ -44,12 +44,13 @@ Deno.serve(async (req) => {
 
     const params = extractParams(code);
     const risk = extractRiskPct(code);
+    params.custom_inputs = extractCustomInputs(code);
 
     // ── Gemini AI Enhancement ──────────────────────────────────────────────────
     const geminiKey = Deno.env.get('GEMINI_API_KEY');
     let aiInterpretation: string | null = null;
 
-    if (geminiKey) {
+    if (use_ai && geminiKey) {
       try {
         const geminiResult = await callGemini(geminiKey, code, params, risk);
         if (geminiResult) {
@@ -234,6 +235,46 @@ function detectStrategyType(code: string): StrategyParams['strategy_type'] {
   if (hasSMC) return 'smc';
   if (hasRSI || hasEMACross) return 'rsi_ema';
   return 'custom'; // fallback to custom if no standard indicators are detected
+}
+
+// ─── Custom Inputs Extraction ─────────────────────────────────────────────────
+function extractCustomInputs(code: string) {
+  const inputs = [];
+  const regex = /input(?:\.(int|float|bool|string))?\s*\(([^)]+)\)/g;
+  let match;
+  let index = 0;
+  while ((match = regex.exec(code)) !== null) {
+    const typeStr = match[1];
+    const argsStr = match[2];
+    
+    let defvalStr = '';
+    let titleStr = `Input ${index + 1}`;
+    
+    const titleMatch = argsStr.match(/(?:title\s*=\s*)?['"]([^'"]+)['"]/);
+    if (titleMatch) titleStr = titleMatch[1];
+    
+    const defvalMatch = argsStr.match(/(?:defval\s*=\s*)?([^,]+)/);
+    if (defvalMatch) {
+      defvalStr = defvalMatch[1].trim();
+      if (defvalStr.startsWith('title') || defvalStr.startsWith('"') || defvalStr.startsWith("'")) {
+        defvalStr = ''; // it was a title, not defval
+      }
+    }
+    
+    let type = 'string';
+    if (typeStr === 'int' || (!typeStr && /^\d+$/.test(defvalStr))) type = 'int';
+    else if (typeStr === 'float' || (!typeStr && /^\d+\.\d+$/.test(defvalStr))) type = 'float';
+    else if (typeStr === 'bool' || (!typeStr && (defvalStr === 'true' || defvalStr === 'false'))) type = 'bool';
+    
+    let defval: any = defvalStr.replace(/['"]/g, '');
+    if (type === 'int') defval = parseInt(defval, 10) || 0;
+    else if (type === 'float') defval = parseFloat(defval) || 0;
+    else if (type === 'bool') defval = (defval === 'true');
+    
+    inputs.push({ name: titleStr, type, defval });
+    index++;
+  }
+  return inputs;
 }
 
 // ─── Parameter Extraction ─────────────────────────────────────────────────────
