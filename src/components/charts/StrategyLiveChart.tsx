@@ -459,7 +459,11 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
           setLastPrice(bar.close);
 
           // Update candle series directly (no full re-render)
-          if (candleSeriesRef.current) {
+          if (candleSeriesRef.current && chartRef.current) {
+            // If user has manually panned/zoomed, preserve their view position
+            const timeScale = chartRef.current.timeScale();
+            const savedRange = userPannedRef.current ? timeScale.getVisibleRange() : null;
+
             candleSeriesRef.current.update({
               time: bar.time as Time,
               open: bar.open,
@@ -467,6 +471,11 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
               low: bar.low,
               close: bar.close,
             });
+
+            // Restore position if user had panned
+            if (savedRange) {
+              timeScale.setVisibleRange(savedRange);
+            }
           }
 
           // Update candles state so priceChange stays accurate
@@ -552,10 +561,15 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
     chartRef.current = chart;
 
     // Track when user manually scrolls/zooms
+    // Use a small delay so the initial fitContent() doesn't mark as user-panned
+    let chartReady = false;
     chart.timeScale().subscribeVisibleTimeRangeChange(() => {
-      // Mark as user-panned so we stop auto-scrolling
-      userPannedRef.current = true;
+      if (chartReady) {
+        userPannedRef.current = true;
+      }
     });
+    // Mark chart as ready after a short delay (after fitContent fires)
+    setTimeout(() => { chartReady = true; }, 500);
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#22c55e',
