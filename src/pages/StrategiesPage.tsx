@@ -416,20 +416,39 @@ export default function StrategiesPage() {
     setSavingRiskAll(true);
     const n = (v: string) => v !== '' ? parseFloat(v) : null;
     try {
-      const patch: Partial<Strategy> = {
-        stop_loss_pct: n(riskForm.stop_loss_pct),
-        take_profit_pct: n(riskForm.take_profit_pct),
-        position_size_pct: n(riskForm.position_size_pct),
-        tp1_pct: n(riskForm.tp1_pct),
-        tp2_pct: n(riskForm.tp2_pct),
-        tp3_pct: n(riskForm.tp3_pct),
-        tp1_size_pct: n(riskForm.tp1_size_pct),
-        tp2_size_pct: n(riskForm.tp2_size_pct),
-        tp3_size_pct: n(riskForm.tp3_size_pct),
-        trade_amount_usdt: n(riskForm.trade_amount_usdt),
-      };
-      await Promise.all(strategies.map(s => updateStrategy(s.id, patch)));
-      toast.success(`✅ Risk Settings applied to all ${strategies.length} strategies!`, { icon: '🌐' });
+      await Promise.all(strategies.map(s => {
+        // Keep each strategy's own symbol and custom_inputs — update everything else
+        const existingP = (s.strategy_params as StrategyParams | null) ?? {} as StrategyParams;
+        const updatedParams: StrategyParams = {
+          ...existingP,
+          // ✅ Apply indicator settings to all (except symbol & custom_inputs)
+          strategy_type:   riskForm.strategy_type,
+          rsi_length:      n(riskForm.rsi_length)    ?? existingP.rsi_length    ?? 14,
+          overbought:      n(riskForm.overbought)    ?? existingP.overbought    ?? 70,
+          oversold:        n(riskForm.oversold)      ?? existingP.oversold      ?? 30,
+          ema_fast:        n(riskForm.ema_fast)      ?? existingP.ema_fast      ?? 20,
+          ema_slow:        n(riskForm.ema_slow)      ?? existingP.ema_slow      ?? 50,
+          st_multiplier:   n(riskForm.st_multiplier) ?? existingP.st_multiplier ?? 2.0,
+          st_lookback:     n(riskForm.st_lookback)   ?? existingP.st_lookback   ?? 10,
+          trade_direction: riskForm.trade_direction,
+          // Keep per-strategy: symbol, custom_inputs
+        };
+        const patch: Partial<Strategy> = {
+          stop_loss_pct:     n(riskForm.stop_loss_pct),
+          take_profit_pct:   n(riskForm.take_profit_pct),
+          position_size_pct: n(riskForm.position_size_pct),
+          tp1_pct:           n(riskForm.tp1_pct),
+          tp2_pct:           n(riskForm.tp2_pct),
+          tp3_pct:           n(riskForm.tp3_pct),
+          tp1_size_pct:      n(riskForm.tp1_size_pct),
+          tp2_size_pct:      n(riskForm.tp2_size_pct),
+          tp3_size_pct:      n(riskForm.tp3_size_pct),
+          trade_amount_usdt: n(riskForm.trade_amount_usdt),
+          strategy_params:   updatedParams,
+        };
+        return updateStrategy(s.id, patch);
+      }));
+      toast.success(`✅ All settings applied to all ${strategies.length} strategies! (Symbol kept per-strategy)`, { icon: '🌐', duration: 4000 });
       const updated = await getStrategies();
       setStrategies(updated);
     } catch (e) {
