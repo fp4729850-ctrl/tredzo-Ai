@@ -295,48 +295,52 @@ export default function StrategiesPage() {
     setSavingRisk(true);
     const n = (v: string) => v !== '' ? parseFloat(v) : null;
 
-    // Build updated strategy_params (indicator params)
-    const existingParams = (selectedStrategy.strategy_params as StrategyParams | null) ?? {} as StrategyParams;
-    const updatedParams: StrategyParams = {
-      ...existingParams,
-      strategy_type: riskForm.strategy_type,
-      rsi_length:    n(riskForm.rsi_length)    ?? existingParams.rsi_length    ?? 14,
-      overbought:    n(riskForm.overbought)    ?? existingParams.overbought    ?? 70,
-      oversold:      n(riskForm.oversold)      ?? existingParams.oversold      ?? 30,
-      ema_fast:      n(riskForm.ema_fast)      ?? existingParams.ema_fast      ?? 20,
-      ema_slow:      n(riskForm.ema_slow)      ?? existingParams.ema_slow      ?? 50,
-      st_multiplier: n(riskForm.st_multiplier) ?? existingParams.st_multiplier ?? 2.0,
-      st_lookback:   n(riskForm.st_lookback)   ?? existingParams.st_lookback   ?? 10,
-      trade_direction: riskForm.trade_direction,
-    };
+    try {
+      // Build updated strategy_params (indicator params)
+      const existingParams = (selectedStrategy.strategy_params as StrategyParams | null) ?? {} as StrategyParams;
+      const updatedParams: StrategyParams = {
+        ...existingParams,
+        strategy_type: riskForm.strategy_type,
+        rsi_length:    n(riskForm.rsi_length)    ?? existingParams.rsi_length    ?? 14,
+        overbought:    n(riskForm.overbought)    ?? existingParams.overbought    ?? 70,
+        oversold:      n(riskForm.oversold)      ?? existingParams.oversold      ?? 30,
+        ema_fast:      n(riskForm.ema_fast)      ?? existingParams.ema_fast      ?? 20,
+        ema_slow:      n(riskForm.ema_slow)      ?? existingParams.ema_slow      ?? 50,
+        st_multiplier: n(riskForm.st_multiplier) ?? existingParams.st_multiplier ?? 2.0,
+        st_lookback:   n(riskForm.st_lookback)   ?? existingParams.st_lookback   ?? 10,
+        trade_direction: riskForm.trade_direction,
+      };
 
-    const patch: Partial<Strategy> = {
-      stop_loss_pct: n(riskForm.stop_loss_pct),
-      take_profit_pct: n(riskForm.take_profit_pct),
-      position_size_pct: n(riskForm.position_size_pct),
-      tp1_pct: n(riskForm.tp1_pct),
-      tp2_pct: n(riskForm.tp2_pct),
-      tp3_pct: n(riskForm.tp3_pct),
-      tp1_size_pct: n(riskForm.tp1_size_pct),
-      tp2_size_pct: n(riskForm.tp2_size_pct),
-      tp3_size_pct: n(riskForm.tp3_size_pct),
-      trade_amount_usdt: n(riskForm.trade_amount_usdt),
-      strategy_params: updatedParams,
-    };
-    const { error } = await updateStrategy(selectedStrategy.id, patch);
-    if (error) {
-      toast.error(`Failed to save risk settings: ${error}`);
-    } else {
+      const patch: Partial<Strategy> = {
+        stop_loss_pct: n(riskForm.stop_loss_pct),
+        take_profit_pct: n(riskForm.take_profit_pct),
+        position_size_pct: n(riskForm.position_size_pct),
+        tp1_pct: n(riskForm.tp1_pct),
+        tp2_pct: n(riskForm.tp2_pct),
+        tp3_pct: n(riskForm.tp3_pct),
+        tp1_size_pct: n(riskForm.tp1_size_pct),
+        tp2_size_pct: n(riskForm.tp2_size_pct),
+        tp3_size_pct: n(riskForm.tp3_size_pct),
+        trade_amount_usdt: n(riskForm.trade_amount_usdt),
+        strategy_params: updatedParams,
+      };
+      const { error } = await updateStrategy(selectedStrategy.id, patch);
+      if (error) {
+        throw new Error(error);
+      }
+
       toast.success('Risk settings saved — indicator params + risk updated!', { icon: '🛡️' });
       const updated = await getStrategies();
       setStrategies(updated);
       const fresh = updated.find(s => s.id === selectedStrategy.id) ?? null;
+      if (!fresh) {
+        throw new Error('Failed to retrieve updated strategy after save');
+      }
       setSelectedStrategy(fresh);
 
       // Build riskConfig for live chart overlay using saved params + strategy params
-      const cfg = buildRiskConfig(fresh ?? selectedStrategy);
+      const cfg = buildRiskConfig(fresh);
       if (cfg) {
-        // Override TP/SL with the just-saved form values
         const nv = (v: string) => v !== '' ? parseFloat(v) : null;
         setChartRiskConfig({
           ...cfg,
@@ -353,8 +357,12 @@ export default function StrategiesPage() {
           trade_direction: riskForm.trade_direction,
         });
       }
+    } catch (e: any) {
+      console.error(e);
+      toast.error(`Failed to save risk settings: ${e.message || e}`);
+    } finally {
+      setSavingRisk(false);
     }
-    setSavingRisk(false);
   };
 
   const handleTimeframeChange = async (strategy: Strategy, tf: string, e: React.MouseEvent) => {
