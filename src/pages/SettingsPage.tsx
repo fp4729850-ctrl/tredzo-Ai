@@ -41,7 +41,7 @@ export default function SettingsPage() {
 
   // Manual test trade state
   const [manualSymbol, setManualSymbol] = useState('DOGEUSDT');
-  const [manualQty, setManualQty] = useState('50');
+  const [manualUsdt, setManualUsdt] = useState('10');
   const [manualLoading, setManualLoading] = useState(false);
   const [manualResult, setManualResult] = useState<string | null>(null);
 
@@ -90,29 +90,43 @@ export default function SettingsPage() {
       return toast.error('Enter API key and secret first');
     }
     if (!manualSymbol) return toast.error('Symbol is required');
-    if (!manualQty || parseFloat(manualQty) <= 0) return toast.error('Quantity must be greater than 0');
+    const usdtAmount = parseFloat(manualUsdt);
+    if (!usdtAmount || usdtAmount <= 0) return toast.error('USDT Amount must be greater than 0');
 
     setManualLoading(true);
     setManualResult(null);
 
-    const payload = {
-      action: 'create-order' as const,
-      testnet: settings.use_testnet ?? true,
-      tradingMode: (settings.trading_mode ?? 'spot') as 'spot' | 'futures',
-      symbol: manualSymbol.toUpperCase(),
-      side,
-      type: 'MARKET' as const,
-      quantity: parseFloat(manualQty),
-    };
+    try {
+      // Fetch current price to calculate quantity from USDT amount
+      const base = settings.use_testnet ? 'https://testnet.binance.vision' : 'https://api.binance.com';
+      const priceRes = await fetch(`${base}/api/v3/ticker/price?symbol=${manualSymbol.toUpperCase()}`);
+      const priceData = await priceRes.json();
+      const price = parseFloat(priceData.price);
+      if (!price || price <= 0) throw new Error('Could not fetch price');
+      const qty = Math.floor((usdtAmount / price) * 1000) / 1000; // 3 decimal places
 
-    const { data, error } = await callBinanceTrade(payload);
-    setManualLoading(false);
-    if (error) {
-      toast.error(`Order failed: ${error}`);
-      setManualResult(`❌ Error: ${error}`);
-    } else {
-      toast.success(`${side} order executed!`, { icon: '🚀' });
-      setManualResult(JSON.stringify(data, null, 2));
+      const payload = {
+        action: 'create-order' as const,
+        testnet: settings.use_testnet ?? true,
+        tradingMode: (settings.trading_mode ?? 'spot') as 'spot' | 'futures',
+        symbol: manualSymbol.toUpperCase(),
+        side,
+        type: 'MARKET' as const,
+        quantity: qty,
+      };
+
+      const { data, error } = await callBinanceTrade(payload);
+      setManualLoading(false);
+      if (error) {
+        toast.error(`Order failed: ${error}`);
+        setManualResult(`❌ Error: ${error}`);
+      } else {
+        toast.success(`${side} order executed! ${usdtAmount} USDT → ${qty} coins at $${price}`, { icon: '🚀' });
+        setManualResult(JSON.stringify(data, null, 2));
+      }
+    } catch (e) {
+      setManualLoading(false);
+      toast.error(`Failed: ${(e as Error).message}`);
     }
   };
 
@@ -298,16 +312,16 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Quantity (in Coins)</Label>
+                <Label className="text-xs">Amount (USDT) 💵</Label>
                 <Input
                   type="number"
-                  placeholder="e.g. 50"
-                  value={manualQty}
-                  onChange={e => setManualQty(e.target.value)}
+                  placeholder="e.g. 10"
+                  value={manualUsdt}
+                  onChange={e => setManualUsdt(e.target.value)}
                   className="h-8 bg-input border-border font-mono text-xs"
                 />
                 <span className="text-[9px] text-muted-foreground">
-                  (DOGE price ~$0.12, so 50 DOGE ≈ 6 USDT)
+                  Bot current price se qty auto-calculate karega
                 </span>
               </div>
             </div>
