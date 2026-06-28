@@ -1014,7 +1014,15 @@ export default function StrategiesPage() {
                           {customInputs.map((input, idx) => {
                             // Hide anything that looks like a symbol picker
                             const n = input.name.toLowerCase();
-                            const isSymbolField = n.includes('symbol') || n.includes('ticker') || n.includes('coin') || n.includes('asset') || input.defval === 'ETHUSDT';
+                            const valToTest = String(input.value ?? input.defval ?? '').toUpperCase();
+                            const isSymbolField = 
+                              n.includes('symbol') || 
+                              n.includes('ticker') || 
+                              n.includes('coin') || 
+                              n.includes('asset') || 
+                              valToTest.includes('USDT') ||
+                              input.type === 'symbol';
+                              
                             if (isSymbolField) return null;
 
                             return (
