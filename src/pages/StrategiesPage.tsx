@@ -100,12 +100,19 @@ export default function StrategiesPage() {
   const [chartRiskConfig, setChartRiskConfig] = useState<StrategyRiskConfig | null>(null);
 
   const load = useCallback(async () => {
-    const [data, summary] = await Promise.all([
-      getStrategies(),
-      getAllTradesSummary(),
-    ]);
-    setStrategies(data);
-    setPnlMap(summary.bySymbol);
+    try {
+      const [data, summary] = await Promise.all([
+        getStrategies(),
+        getAllTradesSummary(),
+      ]);
+      setStrategies(data);
+      setPnlMap(summary.bySymbol);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Failed to load strategies: ${msg}`);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -116,23 +123,27 @@ export default function StrategiesPage() {
     if (!form.name.trim()) return toast.error('Strategy name is required');
     if (!form.pinescript_code.trim()) return toast.error('PineScript code is required');
     setSaving(true);
-    const { error } = await createStrategy(form);
-    if (error) {
-      toast.error(error);
+    try {
+      const { error } = await createStrategy(form);
+      if (error) {
+        throw new Error(error);
+      }
+      // Auto-analyze immediately after saving
+      const strategies = await getStrategies();
+      const saved = strategies[0]; // most recent
+      if (saved) {
+        await runAnalyze(saved, false); // silent toast, full analysis
+      }
+      toast.success('Strategy created and analyzed!');
+      setDialogOpen(false);
+      setForm({ name: '', description: '', pinescript_code: SAMPLE_PINESCRIPT });
+      await load();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Failed to create strategy: ${msg}`);
+    } finally {
       setSaving(false);
-      return;
     }
-    // Auto-analyze immediately after saving
-    const strategies = await getStrategies();
-    const saved = strategies[0]; // most recent
-    if (saved) {
-      await runAnalyze(saved, false); // silent toast, full analysis
-    }
-    toast.success('Strategy created and analyzed!');
-    setDialogOpen(false);
-    setForm({ name: '', description: '', pinescript_code: SAMPLE_PINESCRIPT });
-    await load();
-    setSaving(false);
   };
 
   const handleToggle = async (strategy: Strategy) => {
