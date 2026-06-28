@@ -187,6 +187,7 @@ export default function StrategiesPage() {
       tp3_size_pct: s.tp3_size_pct != null ? String(s.tp3_size_pct) : '',
       trade_amount_usdt: s.trade_amount_usdt != null ? String(s.trade_amount_usdt) : '',
       // Indicator params from strategy_params
+      symbol: p?.symbol ?? '',
       rsi_length: p?.rsi_length != null ? String(p.rsi_length) : '14',
       overbought: p?.overbought != null ? String(p.overbought) : '70',
       oversold: p?.oversold != null ? String(p.oversold) : '30',
@@ -336,6 +337,7 @@ export default function StrategiesPage() {
       const existingParams = (selectedStrategy.strategy_params as StrategyParams | null) ?? {} as StrategyParams;
       const updatedParams: StrategyParams = {
         ...existingParams,
+        symbol:        riskForm.symbol?.trim().toUpperCase() || existingParams.symbol,
         strategy_type: riskForm.strategy_type,
         rsi_length:    n(riskForm.rsi_length)    ?? existingParams.rsi_length    ?? 14,
         overbought:    n(riskForm.overbought)    ?? existingParams.overbought    ?? 70,
@@ -925,6 +927,20 @@ export default function StrategiesPage() {
                               <option value="short">Short Only</option>
                             </select>
                           </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-[11px] font-normal text-muted-foreground flex items-center gap-1">
+                            📈 Trading Symbol <span className="text-primary font-semibold">(Bot trades this pair)</span>
+                          </Label>
+                          <input
+                            type="text"
+                            value={riskForm.symbol ?? ''}
+                            onChange={e => setRiskForm(f => ({ ...f, symbol: e.target.value.toUpperCase() }))}
+                            placeholder="e.g. SOLUSDT, BTCUSDT, ETHUSDT"
+                            className="h-8 w-full rounded-md border border-primary/50 bg-input px-2 text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary uppercase"
+                          />
+                          <p className="text-[10px] text-muted-foreground">Change this to set which pair the bot will trade. Save to apply.</p>
                         </div>
 
                         {(riskForm.strategy_type === 'rsi_ema' || riskForm.strategy_type === 'mixed') && (
