@@ -874,182 +874,113 @@ export default function StrategiesPage() {
                       <span className="text-[10px] text-muted-foreground">AI-extracted · user-editable</span>
                     </div>
 
-                    {/* ── Indicator Settings (AI-extracted) ── */}
-                    <div className="rounded border border-primary/20 bg-primary/5 p-3 space-y-3">
-                      <div className="flex items-center gap-1.5">
-                        <Bot className="h-3.5 w-3.5 text-primary" />
-                        <span className="text-[11px] font-medium text-primary">🤖 Strategy Indicators</span>
-                        <Badge variant="outline" className="text-[10px] border-primary/30 text-primary ml-auto">AI Extracted</Badge>
+                    {/* ── Indicator Settings: hidden when dynamic inputs exist ── */}
+                    {!(selectedStrategy?.strategy_params?.custom_inputs?.length) && (
+                      <div className="rounded border border-primary/20 bg-primary/5 p-3 space-y-3">
+                        <div className="flex items-center gap-1.5">
+                          <Bot className="h-3.5 w-3.5 text-primary" />
+                          <span className="text-[11px] font-medium text-primary">🤖 Strategy Indicators</span>
+                          <Badge variant="outline" className="text-[10px] border-primary/30 text-primary ml-auto">AI Extracted</Badge>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-[11px] font-normal text-muted-foreground">Strategy Type</Label>
+                            <select value={riskForm.strategy_type} onChange={e => setRiskForm(f => ({ ...f, strategy_type: e.target.value as typeof f.strategy_type }))} className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                              <option value="rsi_ema">RSI &amp; EMA</option>
+                              <option value="supertrend">SuperTrend</option>
+                              <option value="smc">Smart Money Concepts</option>
+                              <option value="mixed">Mixed</option>
+                              <option value="custom">Custom Strategy</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[11px] font-normal text-muted-foreground">Trade Direction</Label>
+                            <select value={riskForm.trade_direction} onChange={e => setRiskForm(f => ({ ...f, trade_direction: e.target.value as typeof f.trade_direction }))} className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                              <option value="both">Both (Long + Short)</option>
+                              <option value="long">Long Only</option>
+                              <option value="short">Short Only</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {(riskForm.strategy_type === 'rsi_ema' || riskForm.strategy_type === 'mixed') && (
+                          <div className="space-y-1.5">
+                            <span className="text-[11px] font-medium text-foreground flex items-center gap-1"><Activity className="h-3 w-3 text-primary" /> RSI Settings</span>
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Length</Label><Input type="number" min={2} max={200} step={1} value={riskForm.rsi_length} onChange={e => setRiskForm(f => ({ ...f, rsi_length: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive" />Overbought</Label><Input type="number" min={50} max={99} step={1} value={riskForm.overbought} onChange={e => setRiskForm(f => ({ ...f, overbought: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-success" />Oversold</Label><Input type="number" min={1} max={49} step={1} value={riskForm.oversold} onChange={e => setRiskForm(f => ({ ...f, oversold: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(riskForm.strategy_type === 'rsi_ema' || riskForm.strategy_type === 'mixed') && (
+                          <div className="space-y-1.5">
+                            <span className="text-[11px] font-medium text-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-primary" /> EMA Settings</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Fast Period</Label><Input type="number" min={1} max={500} step={1} value={riskForm.ema_fast} onChange={e => setRiskForm(f => ({ ...f, ema_fast: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Slow Period</Label><Input type="number" min={1} max={500} step={1} value={riskForm.ema_slow} onChange={e => setRiskForm(f => ({ ...f, ema_slow: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                            </div>
+                          </div>
+                        )}
+
+                        {(riskForm.strategy_type === 'supertrend' || riskForm.strategy_type === 'mixed') && (
+                          <div className="space-y-1.5">
+                            <span className="text-[11px] font-medium text-foreground flex items-center gap-1"><Zap className="h-3 w-3 text-warning" /> SuperTrend Settings</span>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Multiplier</Label><Input type="number" min={0.1} max={20} step={0.1} value={riskForm.st_multiplier} onChange={e => setRiskForm(f => ({ ...f, st_multiplier: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Lookback Period</Label><Input type="number" min={1} max={200} step={1} value={riskForm.st_lookback} onChange={e => setRiskForm(f => ({ ...f, st_lookback: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                            </div>
+                          </div>
+                        )}
+
+                        <p className="text-[10px] text-primary/70">✨ AI Analyze karne ke baad sab fields auto-fill ho jaate hain. Aap inhe manually bhi edit kar sakte hain.</p>
                       </div>
+                    )}
 
-                      {/* Strategy Type + Trade Direction */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <Label className="text-[11px] font-normal text-muted-foreground">Strategy Type</Label>
-                          <select
-                            value={riskForm.strategy_type}
-                            onChange={e => setRiskForm(f => ({ ...f, strategy_type: e.target.value as typeof f.strategy_type }))}
-                            className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                          >
-                            <option value="rsi_ema">RSI & EMA</option>
-                            <option value="supertrend">SuperTrend</option>
-                            <option value="smc">Smart Money Concepts</option>
-                            <option value="mixed">Mixed</option>
-                            <option value="custom">Custom Strategy</option>
-                          </select>
+                    {/* ── Dynamic Script Settings: shown when custom_inputs exist ── */}
+                    {selectedStrategy?.strategy_params?.custom_inputs && selectedStrategy.strategy_params.custom_inputs.length > 0 && (
+                      <div className="rounded border border-primary/20 bg-primary/5 p-3 space-y-3">
+                        <div className="flex items-center gap-1.5">
+                          <Code2 className="h-3.5 w-3.5 text-primary" />
+                          <span className="text-[11px] font-medium text-primary">📝 Dynamic Script Settings</span>
+                          <Badge variant="outline" className="text-[10px] border-primary/30 text-primary ml-auto">From PineScript</Badge>
                         </div>
-                        <div className="space-y-1">
-                          <Label className="text-[11px] font-normal text-muted-foreground">Trade Direction</Label>
-                          <select
-                            value={riskForm.trade_direction}
-                            onChange={e => setRiskForm(f => ({ ...f, trade_direction: e.target.value as typeof f.trade_direction }))}
-                            className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                          >
-                            <option value="both">Both (Long + Short)</option>
-                            <option value="long">Long Only</option>
-                            <option value="short">Short Only</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* RSI Settings */}
-                      {(riskForm.strategy_type === 'rsi_ema' || riskForm.strategy_type === 'mixed') && (
-                        <div className="space-y-1.5">
-                          <span className="text-[11px] font-medium text-foreground flex items-center gap-1">
-                            <Activity className="h-3 w-3 text-primary" /> RSI Settings
-                          </span>
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-muted-foreground">Length</Label>
-                              <Input type="number" min={2} max={200} step={1}
-                                value={riskForm.rsi_length}
-                                onChange={e => setRiskForm(f => ({ ...f, rsi_length: e.target.value }))}
-                                className="h-7 bg-input border-border text-xs font-mono" />
-                            </div>
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive" />Overbought</Label>
-                              <Input type="number" min={50} max={99} step={1}
-                                value={riskForm.overbought}
-                                onChange={e => setRiskForm(f => ({ ...f, overbought: e.target.value }))}
-                                className="h-7 bg-input border-border text-xs font-mono" />
-                            </div>
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-success" />Oversold</Label>
-                              <Input type="number" min={1} max={49} step={1}
-                                value={riskForm.oversold}
-                                onChange={e => setRiskForm(f => ({ ...f, oversold: e.target.value }))}
-                                className="h-7 bg-input border-border text-xs font-mono" />
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* EMA Settings */}
-                      {(riskForm.strategy_type === 'rsi_ema' || riskForm.strategy_type === 'mixed') && (
-                        <div className="space-y-1.5">
-                          <span className="text-[11px] font-medium text-foreground flex items-center gap-1">
-                            <TrendingUp className="h-3 w-3 text-primary" /> EMA Settings
-                          </span>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-muted-foreground">Fast Period</Label>
-                              <Input type="number" min={1} max={500} step={1}
-                                value={riskForm.ema_fast}
-                                onChange={e => setRiskForm(f => ({ ...f, ema_fast: e.target.value }))}
-                                className="h-7 bg-input border-border text-xs font-mono" />
-                            </div>
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-muted-foreground">Slow Period</Label>
-                              <Input type="number" min={1} max={500} step={1}
-                                value={riskForm.ema_slow}
-                                onChange={e => setRiskForm(f => ({ ...f, ema_slow: e.target.value }))}
-                                className="h-7 bg-input border-border text-xs font-mono" />
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* SuperTrend Settings */}
-                      {(riskForm.strategy_type === 'supertrend' || riskForm.strategy_type === 'mixed') && (
-                        <div className="space-y-1.5">
-                          <span className="text-[11px] font-medium text-foreground flex items-center gap-1">
-                            <Zap className="h-3 w-3 text-warning" /> SuperTrend Settings
-                          </span>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-muted-foreground">Multiplier</Label>
-                              <Input type="number" min={0.1} max={20} step={0.1}
-                                value={riskForm.st_multiplier}
-                                onChange={e => setRiskForm(f => ({ ...f, st_multiplier: e.target.value }))}
-                                className="h-7 bg-input border-border text-xs font-mono" />
-                            </div>
-                            <div className="space-y-0.5">
-                              <Label className="text-[10px] text-muted-foreground">Lookback Period</Label>
-                              <Input type="number" min={1} max={200} step={1}
-                                value={riskForm.st_lookback}
-                                onChange={e => setRiskForm(f => ({ ...f, st_lookback: e.target.value }))}
-                                className="h-7 bg-input border-border text-xs font-mono" />
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {riskForm.strategy_type === 'custom' && (
-                        <div className="py-2">
-                          <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                            <Code2 className="h-4 w-4 text-primary" />
-                            This is a Custom Strategy. No AI indicator settings are displayed.
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Dynamic Custom Inputs */}
-                      {selectedStrategy?.strategy_params?.custom_inputs && selectedStrategy.strategy_params.custom_inputs.length > 0 && (
-                        <div className="space-y-2 pt-2 border-t border-border/50">
-                          <span className="text-[11px] font-medium text-foreground flex items-center gap-1">
-                            <Code2 className="h-3 w-3 text-primary" /> Dynamic Script Settings
-                          </span>
-                          <div className="grid grid-cols-2 gap-2">
-                            {selectedStrategy.strategy_params.custom_inputs.map((input, idx) => (
-                              <div key={idx} className="space-y-0.5">
-                                <Label className="text-[10px] text-muted-foreground truncate" title={input.name}>{input.name}</Label>
-                                {input.type === 'bool' ? (
-                                  <div className="h-7 flex items-center">
-                                    <Switch
-                                      checked={input.value !== undefined ? Boolean(input.value) : Boolean(input.defval)}
-                                      onCheckedChange={(checked) => {
-                                        // Update local form state for custom input
-                                        const updatedInputs = [...(selectedStrategy.strategy_params?.custom_inputs || [])];
-                                        updatedInputs[idx].value = checked;
-                                        // We don't have this in riskForm currently, so we update it directly in the DB when saved, or we can add it to riskForm.
-                                      }}
-                                    />
-                                  </div>
-                                ) : (
-                                  <Input
-                                    type={input.type === 'string' ? 'text' : 'number'}
-                                    step={input.type === 'float' ? '0.1' : '1'}
-                                    defaultValue={input.value !== undefined ? String(input.value) : String(input.defval)}
-                                    className="h-7 bg-input border-border text-xs font-mono"
-                                    onChange={(e) => {
-                                       const updatedInputs = [...(selectedStrategy.strategy_params?.custom_inputs || [])];
-                                       if (input.type === 'int') updatedInputs[idx].value = parseInt(e.target.value) || 0;
-                                       else if (input.type === 'float') updatedInputs[idx].value = parseFloat(e.target.value) || 0;
-                                       else updatedInputs[idx].value = e.target.value;
+                        <div className="grid grid-cols-2 gap-2">
+                          {selectedStrategy.strategy_params.custom_inputs.map((input, idx) => (
+                            <div key={idx} className="space-y-0.5">
+                              <Label className="text-[10px] text-muted-foreground truncate" title={input.name}>{input.name}</Label>
+                              {input.type === 'bool' ? (
+                                <div className="h-7 flex items-center">
+                                  <Switch
+                                    checked={input.value !== undefined ? Boolean(input.value) : Boolean(input.defval)}
+                                    onCheckedChange={(checked) => {
+                                      const updatedInputs = [...(selectedStrategy.strategy_params?.custom_inputs || [])];
+                                      updatedInputs[idx].value = checked;
                                     }}
                                   />
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                          <p className="text-[9px] text-muted-foreground">Changes to dynamic settings will be applied on next save.</p>
+                                </div>
+                              ) : (
+                                <Input
+                                  type={input.type === 'string' ? 'text' : 'number'}
+                                  step={input.type === 'float' ? '0.1' : '1'}
+                                  defaultValue={input.value !== undefined ? String(input.value) : String(input.defval)}
+                                  className="h-7 bg-input border-border text-xs font-mono"
+                                  onChange={(e) => {
+                                    const updatedInputs = [...(selectedStrategy.strategy_params?.custom_inputs || [])];
+                                    if (input.type === 'int') updatedInputs[idx].value = parseInt(e.target.value) || 0;
+                                    else if (input.type === 'float') updatedInputs[idx].value = parseFloat(e.target.value) || 0;
+                                    else updatedInputs[idx].value = e.target.value;
+                                  }}
+                                />
+                              )}
+                            </div>
+                          ))}
                         </div>
-                      )}
-
-                      <p className="text-[10px] text-primary/70">
-                        ✨ AI Analyze karne ke baad sab fields auto-fill ho jaate hain. Aap inhe manually bhi edit kar sakte hain.
-                      </p>
-                    </div>
+                        <p className="text-[9px] text-muted-foreground">Changes to dynamic settings will be applied on next save.</p>
+                      </div>
+                    )}
 
                     {/* Row 1: Trade Amount USDT + SL + Position Size */}
                     <div className="rounded border border-primary/20 bg-primary/5 px-3 py-2 space-y-2">
