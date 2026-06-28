@@ -389,8 +389,9 @@ Deno.serve(async (req) => {
               continue;
             }
 
-            // 7. Place order
+            // 7. Place entry order
             const side = result.signal as 'BUY' | 'SELL';
+            const closeSide = side === 'BUY' ? 'SELL' : 'BUY'; // opposite side for TP/SL
             const qty = await calcQtyForSymbol(base, prefix, sym, result.price, effectiveSize, tradeAmountUsdt);
             let order: Record<string,unknown> | null = null;
             try {
@@ -401,6 +402,36 @@ Deno.serve(async (req) => {
               const errMsg = (e as Error).message;
               console.error(`[bot-runner] Order failed for ${strategy.id} on ${sym}: ${errMsg}`);
               result.reason += ` | Order Failed: ${errMsg}`;
+            }
+
+            // 7b. Place SL and TP orders on Futures (STOP_MARKET + TAKE_PROFIT_MARKET)
+            if (order && tradingMode === 'futures') {
+              const slPrice = +(result.price * (side === 'BUY' ? (1 - effectiveSL / 100) : (1 + effectiveSL / 100))).toFixed(4);
+              const tpPrice = +(result.price * (side === 'BUY' ? (1 + effectiveTP / 100) : (1 - effectiveTP / 100))).toFixed(4);
+
+              // Stop Loss
+              try {
+                await signedPost(base, `${prefix}/order`, settings.binance_api_key, settings.binance_api_secret, {
+                  symbol: sym.toUpperCase(), side: closeSide, type: 'STOP_MARKET',
+                  stopPrice: String(slPrice), closePosition: 'true',
+                });
+                console.log(`[bot-runner] SL order placed at ${slPrice} for ${sym}`);
+              } catch (e) {
+                console.error(`[bot-runner] SL order failed for ${sym}: ${(e as Error).message}`);
+              }
+
+              // Take Profit (use tp1 if available, else effectiveTP)
+              const tpUsed = tp1 ?? effectiveTP;
+              const tpFinalPrice = +(result.price * (side === 'BUY' ? (1 + tpUsed / 100) : (1 - tpUsed / 100))).toFixed(4);
+              try {
+                await signedPost(base, `${prefix}/order`, settings.binance_api_key, settings.binance_api_secret, {
+                  symbol: sym.toUpperCase(), side: closeSide, type: 'TAKE_PROFIT_MARKET',
+                  stopPrice: String(tpFinalPrice), closePosition: 'true',
+                });
+                console.log(`[bot-runner] TP order placed at ${tpFinalPrice} for ${sym}`);
+              } catch (e) {
+                console.error(`[bot-runner] TP order failed for ${sym}: ${(e as Error).message}`);
+              }
             }
 
             // 8. Log trade (only if successful)
