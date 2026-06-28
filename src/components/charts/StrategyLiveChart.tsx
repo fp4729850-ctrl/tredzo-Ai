@@ -633,6 +633,8 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
       .sort((a, b) => a.time - b.time)
       .filter((c, i, arr) => i === 0 || c.time !== arr[i - 1].time);
 
+    if (sorted.length === 0) return;
+
     // ── Strategy backtest markers (RSI+EMA signals) + DB trade markers ──
     const allMarkers: SeriesMarker<Time>[] = [];
 
@@ -763,7 +765,13 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
 
     return () => {
       // Clean up dynamic lines
-      addedLines.forEach(line => chart.removeSeries(line));
+      addedLines.forEach(line => {
+        try {
+          chart.removeSeries(line);
+        } catch (e) {
+          // Ignore if chart is already removed by the main useEffect cleanup
+        }
+      });
     };
   }, [signals, strategySignals, datasetId]);
 
