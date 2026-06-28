@@ -937,34 +937,35 @@ export default function StrategiesPage() {
                       <span className="text-[10px] text-muted-foreground">AI-extracted · user-editable</span>
                     </div>
 
+                    {/* ALWAYS SHOW Strategy Type & Direction */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-normal text-muted-foreground">Bot Execution Logic</Label>
+                        <select value={riskForm.strategy_type} onChange={e => setRiskForm(f => ({ ...f, strategy_type: e.target.value as typeof f.strategy_type }))} className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                          <option value="rsi_ema">RSI &amp; EMA</option>
+                          <option value="supertrend">Pure Price Action (SuperTrend)</option>
+                          <option value="mixed">Mixed (SuperTrend + RSI)</option>
+                          <option value="smc">Smart Money Concepts</option>
+                          <option value="custom">Custom Strategy</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-normal text-muted-foreground">Trade Direction</Label>
+                        <select value={riskForm.trade_direction} onChange={e => setRiskForm(f => ({ ...f, trade_direction: e.target.value as typeof f.trade_direction }))} className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                          <option value="both">Both (Long + Short)</option>
+                          <option value="long">Long Only</option>
+                          <option value="short">Short Only</option>
+                        </select>
+                      </div>
+                    </div>
+
                     {/* ── Indicator Settings: hidden when dynamic inputs exist ── */}
                     {!(selectedStrategy?.strategy_params?.custom_inputs?.length) && (
                       <div className="rounded border border-primary/20 bg-primary/5 p-3 space-y-3">
                         <div className="flex items-center gap-1.5">
                           <Bot className="h-3.5 w-3.5 text-primary" />
-                          <span className="text-[11px] font-medium text-primary">🤖 Strategy Indicators</span>
+                          <span className="text-[11px] font-medium text-primary">🤖 Internal Indicator Settings</span>
                           <Badge variant="outline" className="text-[10px] border-primary/30 text-primary ml-auto">AI Extracted</Badge>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <Label className="text-[11px] font-normal text-muted-foreground">Strategy Type</Label>
-                            <select value={riskForm.strategy_type} onChange={e => setRiskForm(f => ({ ...f, strategy_type: e.target.value as typeof f.strategy_type }))} className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
-                              <option value="rsi_ema">RSI &amp; EMA</option>
-                              <option value="supertrend">SuperTrend</option>
-                              <option value="smc">Smart Money Concepts</option>
-                              <option value="mixed">Mixed</option>
-                              <option value="custom">Custom Strategy</option>
-                            </select>
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-[11px] font-normal text-muted-foreground">Trade Direction</Label>
-                            <select value={riskForm.trade_direction} onChange={e => setRiskForm(f => ({ ...f, trade_direction: e.target.value as typeof f.trade_direction }))} className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
-                              <option value="both">Both (Long + Short)</option>
-                              <option value="long">Long Only</option>
-                              <option value="short">Short Only</option>
-                            </select>
-                          </div>
                         </div>
 
                         {(riskForm.strategy_type === 'rsi_ema' || riskForm.strategy_type === 'mixed') && (
