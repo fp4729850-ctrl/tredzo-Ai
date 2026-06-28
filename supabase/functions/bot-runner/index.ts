@@ -189,7 +189,6 @@ function calcSupertrendDirs(candles: OHLCV[], lookback: number, multiplier: numb
 function evaluateSignal(candles: OHLCV[], p: StrategyParams): SignalResult {
   const closes = candles.map(c => c.close);
   const rsi = calcRSI(closes, p.rsi_length);
-  const prevRsi = calcRSI(closes.slice(0, -1), p.rsi_length);
   const emaF = calcEMA(closes, p.ema_fast);
   const emaS = calcEMA(closes, p.ema_slow);
   const price = closes[closes.length - 1];
@@ -203,11 +202,13 @@ function evaluateSignal(candles: OHLCV[], p: StrategyParams): SignalResult {
     const stLen = p.st_lookback ?? 10;
     const dirs = calcSupertrendDirs(candles, stLen, stMult);
     const last = dirs.length - 1;
-    if (last < 1 || dirs[last] === 0 || dirs[last - 1] === 0) {
-      return { signal: 'HOLD', reason: 'Supertrend not enough data', rsi, ema_fast: emaF, ema_slow: emaS, price };
+    
+    // Check for a flip in the last 5 candles
+    let isBuy = false, isSell = false;
+    for (let i = Math.max(1, last - 4); i <= last; i++) {
+      if (dirs[i-1] === -1 && dirs[i] === 1) isBuy = true;
+      if (dirs[i-1] === 1 && dirs[i] === -1) isSell = true;
     }
-    const isBuy = dirs[last - 1] === -1 && dirs[last] === 1;   // bearish→bullish
-    const isSell = dirs[last - 1] === 1 && dirs[last] === -1;  // bullish→bearish
 
     // For mixed: also check RSI filter
     if (type === 'mixed') {
@@ -235,8 +236,16 @@ function evaluateSignal(candles: OHLCV[], p: StrategyParams): SignalResult {
   }
 
   // ── RSI + EMA (default for rsi_ema, custom, smc fallback) ──
-  const bullishCross = prevRsi <= p.oversold && rsi > p.oversold;
-  const bearishCross = prevRsi >= p.overbought && rsi < p.overbought;
+  // Check for crossover in last 5 candles
+  let bullishCross = false, bearishCross = false;
+  for (let i = closes.length - 5; i < closes.length; i++) {
+    if (i < 1) continue;
+    const rsiNow = calcRSI(closes.slice(0, i + 1), p.rsi_length);
+    const rsiPrev = calcRSI(closes.slice(0, i), p.rsi_length);
+    if (rsiPrev <= p.oversold && rsiNow > p.oversold) bullishCross = true;
+    if (rsiPrev >= p.overbought && rsiNow < p.overbought) bearishCross = true;
+  }
+
   if (canLong && bullishCross && emaF > emaS) return { signal: 'BUY', reason: `RSI crossed above oversold(${p.oversold}) + uptrend confirmed`, rsi, ema_fast: emaF, ema_slow: emaS, price };
   if (canShort && bearishCross && emaF < emaS) return { signal: 'SELL', reason: `RSI crossed below overbought(${p.overbought}) + downtrend confirmed`, rsi, ema_fast: emaF, ema_slow: emaS, price };
   return { signal: 'HOLD', reason: `RSI=${rsi} | no entry condition met`, rsi, ema_fast: emaF, ema_slow: emaS, price };
@@ -328,6 +337,12 @@ Deno.serve(async (req) => {
         results.push({ strategyId: strategy.id, userId, signal: result.signal, symbol: params.symbol, reason: result.reason });
 
         if (result.signal === 'HOLD') continue;
+
+        // ✅ Deduplication: skip if last trade was same direction (same flip already traded)
+        if (strategy.last_signal === result.signal) {
+          console.log(`[bot-runner] Skipping duplicate ${result.signal} for ${strategy.id} — already traded this flip`);
+          continue;
+        }
 
         // 7. Place order
         const side = result.signal as 'BUY' | 'SELL';
