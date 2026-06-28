@@ -5,6 +5,7 @@ import {
   CrosshairMode,
   CandlestickSeries,
   LineSeries,
+  createSeriesMarkers,
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts';
@@ -639,8 +640,15 @@ export function StrategyLiveChart({ symbol: defaultSymbol, timeframe: defaultTF,
     const validMarkers = allMarkers.filter(m => m.time != null && !isNaN(Number(m.time)));
     if (validMarkers.length > 0) {
       validMarkers.sort((a, b) => (a.time as number) - (b.time as number));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (candleSeries as any).setMarkers(validMarkers);
+      
+      // Use v5 API for markers
+      if (!(candleSeries as any)._markersPlugin) {
+        (candleSeries as any)._markersPlugin = createSeriesMarkers(candleSeries, validMarkers);
+      } else {
+        (candleSeries as any)._markersPlugin.setMarkers(validMarkers);
+      }
+    } else if ((candleSeries as any)._markersPlugin) {
+      (candleSeries as any)._markersPlugin.setMarkers([]);
     }
 
     // ── SL / TP price lines for the LAST strategy signal ──
