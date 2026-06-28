@@ -1013,13 +1013,14 @@ export default function StrategiesPage() {
                         <div className="space-y-1.5">
                           {customInputs.map((input, idx) => {
                             // Hide anything that looks like a symbol picker
-                            const n = input.name.toLowerCase();
+                            const n = String(input.name || '').toLowerCase();
                             const valToTest = String(input.value ?? input.defval ?? '').toUpperCase();
                             const isSymbolField = 
                               n.includes('symbol') || 
                               n.includes('ticker') || 
                               n.includes('coin') || 
                               n.includes('asset') || 
+                              n.includes('usdt') ||
                               valToTest.includes('USDT') ||
                               input.type === 'symbol';
                               
