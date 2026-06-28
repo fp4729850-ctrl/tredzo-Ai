@@ -14,13 +14,27 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface CustomInput {
+  name: string;
+  type: 'int' | 'float' | 'bool' | 'string';
+  defval: number | string | boolean;
+  value?: number | string | boolean;
+}
+
 interface StrategyParams {
   rsi_length: number; overbought: number; oversold: number;
   ema_fast: number; ema_slow: number;
   symbol: string; timeframe: string;
   trade_direction: 'long' | 'short' | 'both';
+  strategy_type?: 'rsi_ema' | 'supertrend' | 'smc' | 'mixed' | 'custom';
+  st_multiplier?: number;
+  st_lookback?: number;
+  rsi_filter_enabled?: boolean;
+  rsi_filter_long_level?: number;
+  rsi_filter_short_level?: number;
+  custom_inputs?: CustomInput[];
 }
-interface OHLCV { close: number; high: number; low: number; }
+interface OHLCV { open: number; close: number; high: number; low: number; }
 interface SignalResult { signal: 'BUY'|'SELL'|'HOLD'; reason: string; rsi: number; ema_fast: number; ema_slow: number; price: number; }
 
 /** Timeframe → milliseconds */
@@ -62,7 +76,7 @@ async function fetchKlines(base: string, symbol: string, interval: string, limit
   const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`Klines fetch failed: ${res.status}`);
   const raw: unknown[][] = await res.json();
-  return raw.map(c => ({ close: parseFloat(c[4] as string), high: parseFloat(c[2] as string), low: parseFloat(c[3] as string) }));
+  return raw.map(c => ({ open: parseFloat(c[1] as string), high: parseFloat(c[2] as string), low: parseFloat(c[3] as string), close: parseFloat(c[4] as string) }));
 }
 
 function calcRSI(closes: number[], period: number): number {
@@ -84,19 +98,148 @@ function calcEMA(closes: number[], period: number): number {
   return +ema.toFixed(6);
 }
 
-function evaluateSignal(closes: number[], p: StrategyParams): SignalResult {
+// ── Apply user-edited custom_inputs onto strategy params ──
+function applyCustomInputOverrides(p: StrategyParams): StrategyParams {
+  if (!p.custom_inputs || p.custom_inputs.length === 0) return p;
+
+  // Name → field mapping (case-insensitive, fuzzy)
+  const mapping: Record<string, (v: number) => void> = {};
+  const set = (keys: string[], fn: (v: number) => void) => keys.forEach(k => mapping[k] = fn);
+
+  set(['rsi length', 'rsi_length', 'rsi period', 'rsilength'], v => { p.rsi_length = v; });
+  set(['overbought', 'rsi overbought', 'ob'], v => { p.overbought = v; });
+  set(['oversold', 'rsi oversold', 'os'], v => { p.oversold = v; });
+  set(['ema fast', 'ema_fast', 'fast ema', 'fast period', 'ema fast period', 'fast length', 'short ema'], v => { p.ema_fast = v; });
+  set(['ema slow', 'ema_slow', 'slow ema', 'slow period', 'ema slow period', 'slow length', 'long ema'], v => { p.ema_slow = v; });
+  set(['supertrend multiplier', 'st multiplier', 'st_multiplier', 'multiplier', 'atr multiplier', 'factor'], v => { p.st_multiplier = v; });
+  set(['supertrend lookback', 'st lookback', 'st_lookback', 'atr length', 'atr period', 'supertrend length'], v => { p.st_lookback = v; });
+
+  for (const input of p.custom_inputs) {
+    const val = input.value ?? input.defval;
+    if (typeof val !== 'number') continue;
+    const nameKey = input.name.toLowerCase().trim();
+    if (mapping[nameKey]) {
+      mapping[nameKey](val);
+    }
+  }
+  return p;
+}
+
+// ── ATR calculation (needed for Supertrend) ──
+function calcATR(candles: OHLCV[], period: number): number[] {
+  const trs: number[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    if (i === 0) {
+      trs.push(candles[i].high - candles[i].low);
+    } else {
+      const tr = Math.max(
+        candles[i].high - candles[i].low,
+        Math.abs(candles[i].high - candles[i - 1].close),
+        Math.abs(candles[i].low - candles[i - 1].close)
+      );
+      trs.push(tr);
+    }
+  }
+  // RMA (Wilder's smoothing)
+  const atr: number[] = new Array(candles.length).fill(0);
+  if (trs.length < period) return atr;
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += trs[i];
+  atr[period - 1] = sum / period;
+  for (let i = period; i < trs.length; i++) {
+    atr[i] = (atr[i - 1] * (period - 1) + trs[i]) / period;
+  }
+  return atr;
+}
+
+// ── Supertrend direction array: 1 = bullish, -1 = bearish ──
+function calcSupertrendDirs(candles: OHLCV[], lookback: number, multiplier: number): number[] {
+  const atr = calcATR(candles, lookback);
+  const dirs: number[] = new Array(candles.length).fill(0);
+  let prevUpper = 0, prevLower = 0, prevDir = 1;
+
+  for (let i = lookback - 1; i < candles.length; i++) {
+    const hl2 = (candles[i].high + candles[i].low) / 2;
+    let upper = hl2 + multiplier * atr[i];
+    let lower = hl2 - multiplier * atr[i];
+
+    if (i > lookback - 1) {
+      lower = lower > prevLower || candles[i - 1].close < prevLower ? lower : prevLower;
+      upper = upper < prevUpper || candles[i - 1].close > prevUpper ? upper : prevUpper;
+    }
+
+    let dir: number;
+    if (i === lookback - 1) {
+      dir = candles[i].close > upper ? 1 : -1;
+    } else {
+      if (prevDir === 1 && candles[i].close < lower) dir = -1;
+      else if (prevDir === -1 && candles[i].close > upper) dir = 1;
+      else dir = prevDir;
+    }
+
+    dirs[i] = dir;
+    prevUpper = upper;
+    prevLower = lower;
+    prevDir = dir;
+  }
+  return dirs;
+}
+
+// ── Unified signal evaluator — branches on strategy_type ──
+function evaluateSignal(candles: OHLCV[], p: StrategyParams): SignalResult {
+  const closes = candles.map(c => c.close);
   const rsi = calcRSI(closes, p.rsi_length);
-  const prevRsi = calcRSI(closes.slice(0,-1), p.rsi_length);
+  const prevRsi = calcRSI(closes.slice(0, -1), p.rsi_length);
   const emaF = calcEMA(closes, p.ema_fast);
   const emaS = calcEMA(closes, p.ema_slow);
   const price = closes[closes.length - 1];
-  const bullishCross = prevRsi <= p.oversold && rsi > p.oversold;
-  const bearishCross = prevRsi >= p.overbought && rsi < p.overbought;
   const canLong = p.trade_direction === 'long' || p.trade_direction === 'both';
   const canShort = p.trade_direction === 'short' || p.trade_direction === 'both';
-  if (canLong && bullishCross && emaF > emaS) return { signal:'BUY', reason:`RSI crossed above oversold(${p.oversold}) + uptrend confirmed`, rsi, ema_fast:emaF, ema_slow:emaS, price };
-  if (canShort && bearishCross && emaF < emaS) return { signal:'SELL', reason:`RSI crossed below overbought(${p.overbought}) + downtrend confirmed`, rsi, ema_fast:emaF, ema_slow:emaS, price };
-  return { signal:'HOLD', reason:`RSI=${rsi} | no entry condition met`, rsi, ema_fast:emaF, ema_slow:emaS, price };
+  const type = p.strategy_type ?? 'rsi_ema';
+
+  // ── Supertrend / Mixed ──
+  if (type === 'supertrend' || type === 'mixed') {
+    const stMult = p.st_multiplier ?? 2.0;
+    const stLen = p.st_lookback ?? 10;
+    const dirs = calcSupertrendDirs(candles, stLen, stMult);
+    const last = dirs.length - 1;
+    if (last < 1 || dirs[last] === 0 || dirs[last - 1] === 0) {
+      return { signal: 'HOLD', reason: 'Supertrend not enough data', rsi, ema_fast: emaF, ema_slow: emaS, price };
+    }
+    const isBuy = dirs[last - 1] === -1 && dirs[last] === 1;   // bearish→bullish
+    const isSell = dirs[last - 1] === 1 && dirs[last] === -1;  // bullish→bearish
+
+    // For mixed: also check RSI filter
+    if (type === 'mixed') {
+      const rsiFilterEnabled = p.rsi_filter_enabled ?? false;
+      const rsiLongLevel = p.rsi_filter_long_level ?? 50;
+      const rsiShortLevel = p.rsi_filter_short_level ?? 50;
+      if (isBuy && canLong) {
+        if (rsiFilterEnabled && rsi < rsiLongLevel) {
+          return { signal: 'HOLD', reason: `ST bullish but RSI(${rsi}) < ${rsiLongLevel} filter`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+        }
+        return { signal: 'BUY', reason: `Supertrend turned bullish + RSI(${rsi}) confirmed`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+      }
+      if (isSell && canShort) {
+        if (rsiFilterEnabled && rsi > rsiShortLevel) {
+          return { signal: 'HOLD', reason: `ST bearish but RSI(${rsi}) > ${rsiShortLevel} filter`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+        }
+        return { signal: 'SELL', reason: `Supertrend turned bearish + RSI(${rsi}) confirmed`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+      }
+    } else {
+      // Pure supertrend
+      if (isBuy && canLong) return { signal: 'BUY', reason: `Supertrend turned bullish`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+      if (isSell && canShort) return { signal: 'SELL', reason: `Supertrend turned bearish`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+    }
+    return { signal: 'HOLD', reason: `Supertrend dir=${dirs[last]} | no direction change`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+  }
+
+  // ── RSI + EMA (default for rsi_ema, custom, smc fallback) ──
+  const bullishCross = prevRsi <= p.oversold && rsi > p.oversold;
+  const bearishCross = prevRsi >= p.overbought && rsi < p.overbought;
+  if (canLong && bullishCross && emaF > emaS) return { signal: 'BUY', reason: `RSI crossed above oversold(${p.oversold}) + uptrend confirmed`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+  if (canShort && bearishCross && emaF < emaS) return { signal: 'SELL', reason: `RSI crossed below overbought(${p.overbought}) + downtrend confirmed`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+  return { signal: 'HOLD', reason: `RSI=${rsi} | no entry condition met`, rsi, ema_fast: emaF, ema_slow: emaS, price };
 }
 
 function calcQty(price: number, pct: number): number {
@@ -131,7 +274,9 @@ Deno.serve(async (req) => {
 
     for (const strategy of strategies) {
       try {
-        const params = strategy.strategy_params as StrategyParams;
+        const rawParams = strategy.strategy_params as StrategyParams;
+        // Apply user-edited dynamic custom_inputs over AI-extracted defaults
+        const params = applyCustomInputOverrides({ ...rawParams });
         const tf = strategy.timeframe ?? params.timeframe ?? '1h';
         const intervalMs = TF_MS[tf] ?? TF_MS['1h'];
 
@@ -163,14 +308,14 @@ Deno.serve(async (req) => {
         const tp2: number|null = strategy.tp2_pct ?? null;
         const tp3: number|null = strategy.tp3_pct ?? null;
 
-        // 4. Fetch klines
+        // 4. Fetch klines (need OHLCV for Supertrend ATR calc)
         const interval = TF_INTERVAL[tf] ?? '1h';
-        const klineLimit = Math.max(params.rsi_length + 10, params.ema_slow + 10, 60);
+        const stLen = params.st_lookback ?? 10;
+        const klineLimit = Math.max(params.rsi_length + 10, params.ema_slow + 10, stLen * 3, 60);
         const candles = await fetchKlines(base, params.symbol, interval, klineLimit);
-        const closes = candles.map(c => c.close);
 
-        // 5. Evaluate signal
-        const result = evaluateSignal(closes, params);
+        // 5. Evaluate signal (passes full candles for Supertrend)
+        const result = evaluateSignal(candles, params);
         const ts = new Date().toISOString();
 
         // 6. Always update last_executed_at + last_signal
