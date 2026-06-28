@@ -947,26 +947,24 @@ export default function StrategiesPage() {
                           <span className="text-[11px] font-medium text-primary">📝 Dynamic Script Settings</span>
                           <Badge variant="outline" className="text-[10px] border-primary/30 text-primary ml-auto">From PineScript</Badge>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1.5">
                           {selectedStrategy.strategy_params.custom_inputs.map((input, idx) => (
-                            <div key={idx} className="space-y-0.5">
-                              <Label className="text-[10px] text-muted-foreground truncate" title={input.name}>{input.name}</Label>
+                            <div key={idx} className="flex items-center justify-between gap-3 rounded bg-input/40 px-2 py-1.5">
+                              <Label className="text-[11px] text-foreground font-medium flex-1 truncate" title={input.name}>{input.name}</Label>
                               {input.type === 'bool' ? (
-                                <div className="h-7 flex items-center">
-                                  <Switch
-                                    checked={input.value !== undefined ? Boolean(input.value) : Boolean(input.defval)}
-                                    onCheckedChange={(checked) => {
-                                      const updatedInputs = [...(selectedStrategy.strategy_params?.custom_inputs || [])];
-                                      updatedInputs[idx].value = checked;
-                                    }}
-                                  />
-                                </div>
+                                <Switch
+                                  checked={input.value !== undefined ? Boolean(input.value) : Boolean(input.defval)}
+                                  onCheckedChange={(checked) => {
+                                    const updatedInputs = [...(selectedStrategy.strategy_params?.custom_inputs || [])];
+                                    updatedInputs[idx].value = checked;
+                                  }}
+                                />
                               ) : (
                                 <Input
                                   type={input.type === 'string' ? 'text' : 'number'}
                                   step={input.type === 'float' ? '0.1' : '1'}
                                   defaultValue={input.value !== undefined ? String(input.value) : String(input.defval)}
-                                  className="h-7 bg-input border-border text-xs font-mono"
+                                  className="h-7 w-24 bg-input border-border text-xs font-mono text-right"
                                   onChange={(e) => {
                                     const updatedInputs = [...(selectedStrategy.strategy_params?.custom_inputs || [])];
                                     if (input.type === 'int') updatedInputs[idx].value = parseInt(e.target.value) || 0;
