@@ -351,20 +351,64 @@ async function executeAutoTrade(
       }
     }
 
-    // Place TP1 order (futures only)
+    // ----- Quantity split for TP1 and Trailing SL -----
+    const qtyHalf = Number((qty / 2).toFixed(4)); // first half for TP1
+    const qtyRemaining = Number((qty - qtyHalf).toFixed(4));
+
+    // Place market order for full qty (already done above)
+    // Place TP1 order for first half
     if (isFutures && item.dynamic_tp1) {
       const tpPrice = +item.dynamic_tp1.toFixed(4);
       try {
         await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
-          symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
-          stopPrice: String(tpPrice), closePosition: 'true',
+          symbol,
+          side: closeSide,
+          type: 'TAKE_PROFIT_MARKET',
+          stopPrice: String(tpPrice),
+          quantity: String(qtyHalf),
+          closePosition: 'false',
         });
       } catch (e) {
-        console.error(`[market-scanner] TP order failed: ${(e as Error).message}`);
+        console.error(`[market-scanner] TP1 order failed: ${(e as Error).message}`);
       }
     }
 
-    // Log to trades table
+    // Place Trailing Stop order for remaining half (if supported)
+    const trailingRate = settings.trailing_sl_percent ?? 2; // default 2%
+    if (isFutures && trailingRate > 0 && qtyRemaining > 0) {
+      try {
+        await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
+          symbol,
+          side: closeSide,
+          type: 'TRAILING_STOP_MARKET',
+          callbackRate: String(trailingRate),
+          quantity: String(qtyRemaining),
+          closePosition: 'false',
+        });
+        console.log(`[market-scanner] Trailing SL placed for ${symbol} @ ${trailingRate}%`);
+      } catch (e) {
+        console.error(`[market-scanner] Trailing SL order failed: ${(e as Error).message}`);
+      }
+    }
+
+    // Place SL order for the whole position (if needed)
+    if (isFutures && item.dynamic_sl) {
+      const slPrice = +item.dynamic_sl.toFixed(4);
+      try {
+        await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
+          symbol,
+          side: closeSide,
+          type: 'STOP_MARKET',
+          stopPrice: String(slPrice),
+          quantity: String(qty),
+          closePosition: 'true',
+        });
+      } catch (e) {
+        console.error(`[market-scanner] SL order failed: ${(e as Error).message}`);
+      }
+    }
+
+    // Log to trades table (store full qty; individual TP/TSL handled separately)
     await sb.from('trades').insert({
       user_id:          userId,
       symbol,
@@ -378,7 +422,8 @@ async function executeAutoTrade(
       opened_at:        new Date().toISOString(),
     });
 
-    // Log signal
+    // End of trade execution block
+ Log signal
     await sb.from('signals').insert({
       user_id:    userId,
       symbol,
