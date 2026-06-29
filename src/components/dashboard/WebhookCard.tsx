@@ -68,8 +68,30 @@ export function WebhookCard({ webhookToken }: { webhookToken?: string | null }) 
           </p>
         </div>
 
+        {/* Advanced PineScript Tip */}
+        <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 space-y-3 mt-4">
+          <div className="flex items-center gap-2">
+            <Info className="h-4 w-4 text-blue-400 shrink-0" />
+            <span className="text-sm font-semibold text-blue-300">Advanced: Custom PineScript Algos</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Agar aap apni script mein <strong>alert_message</strong> ka use karte hain, toh aap apne PineScript code ke andar sidha JSON define kar sakte hain. Example:
+          </p>
+          <pre className="rounded bg-black/50 p-3 font-mono text-[11px] text-blue-200 overflow-x-auto">
+            {`strategy.entry("Long", strategy.long, alert_message='{"action": "BUY", "symbol": "{{ticker}}", "price": "{{close}}"}')`}
+          </pre>
+          <p className="text-xs text-muted-foreground">
+            Aisa karne par, aapko TradingView ke Alert Message box mein sirf yeh likhna hoga:
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 rounded bg-muted px-3 py-1.5 font-mono text-xs text-blue-300">
+              {`{{strategy.order.alert_message}}`}
+            </code>
+          </div>
+        </div>
+
         {/* Instructions */}
-        <div className="text-xs text-muted-foreground pt-1 border-t border-border/50">
+        <div className="text-xs text-muted-foreground pt-3 border-t border-border/50">
           <p className="flex items-center gap-1 font-semibold mb-2">
             <ExternalLink className="h-3 w-3" /> TradingView Setup Steps:
           </p>
