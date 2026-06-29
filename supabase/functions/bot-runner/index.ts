@@ -207,37 +207,32 @@ function evaluateSignal(candles: OHLCV[], p: StrategyParams): SignalResult {
     const stLen = p.st_lookback ?? 10;
     const dirs = calcSupertrendDirs(candles, stLen, stMult);
     const last = dirs.length - 1;
+    const currentTrend = dirs[last]; // 1 for Bullish, -1 for Bearish
     
-    // Check for a flip in the last 5 candles
-    let isBuy = false, isSell = false;
-    for (let i = Math.max(1, last - 4); i <= last; i++) {
-      if (dirs[i-1] === -1 && dirs[i] === 1) isBuy = true;
-      if (dirs[i-1] === 1 && dirs[i] === -1) isSell = true;
-    }
-
     // For mixed: also check RSI filter
     if (type === 'mixed') {
       const rsiFilterEnabled = p.rsi_filter_enabled ?? false;
       const rsiLongLevel = p.rsi_filter_long_level ?? 50;
       const rsiShortLevel = p.rsi_filter_short_level ?? 50;
-      if (isBuy && canLong) {
+      
+      if (currentTrend === 1 && canLong) {
         if (rsiFilterEnabled && rsi < rsiLongLevel) {
           return { signal: 'HOLD', reason: `ST bullish but RSI(${rsi}) < ${rsiLongLevel} filter`, rsi, ema_fast: emaF, ema_slow: emaS, price };
         }
-        return { signal: 'BUY', reason: `Supertrend turned bullish + RSI(${rsi}) confirmed`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+        return { signal: 'BUY', reason: `Supertrend is bullish + RSI(${rsi}) confirmed`, rsi, ema_fast: emaF, ema_slow: emaS, price };
       }
-      if (isSell && canShort) {
+      if (currentTrend === -1 && canShort) {
         if (rsiFilterEnabled && rsi > rsiShortLevel) {
           return { signal: 'HOLD', reason: `ST bearish but RSI(${rsi}) > ${rsiShortLevel} filter`, rsi, ema_fast: emaF, ema_slow: emaS, price };
         }
-        return { signal: 'SELL', reason: `Supertrend turned bearish + RSI(${rsi}) confirmed`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+        return { signal: 'SELL', reason: `Supertrend is bearish + RSI(${rsi}) confirmed`, rsi, ema_fast: emaF, ema_slow: emaS, price };
       }
     } else {
       // Pure supertrend
-      if (isBuy && canLong) return { signal: 'BUY', reason: `Supertrend turned bullish`, rsi, ema_fast: emaF, ema_slow: emaS, price };
-      if (isSell && canShort) return { signal: 'SELL', reason: `Supertrend turned bearish`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+      if (currentTrend === 1 && canLong) return { signal: 'BUY', reason: `Supertrend is bullish`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+      if (currentTrend === -1 && canShort) return { signal: 'SELL', reason: `Supertrend is bearish`, rsi, ema_fast: emaF, ema_slow: emaS, price };
     }
-    return { signal: 'HOLD', reason: `Supertrend dir=${dirs[last]} | no direction change`, rsi, ema_fast: emaF, ema_slow: emaS, price };
+    return { signal: 'HOLD', reason: `Supertrend dir=${currentTrend} | direction not allowed by settings`, rsi, ema_fast: emaF, ema_slow: emaS, price };
   }
 
   // ── RSI + EMA (default for rsi_ema, custom, smc fallback) ──
