@@ -423,7 +423,7 @@ async function executeAutoTrade(
     });
 
     // End of trade execution block
- Log signal
+    // Log signal
     await sb.from('signals').insert({
       user_id:    userId,
       symbol,
