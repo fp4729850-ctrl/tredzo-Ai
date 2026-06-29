@@ -212,17 +212,17 @@ export default function MarketScanPage() {
         } else {
           toast.info('No Tredzo signals yet — market not ready', { duration: 3000 });
         }
+      }
 
-        // Always show individual trade result messages (success or failure)
-        if (autoTrade && data.tradeResults) {
-          (data.tradeResults as Array<{symbol: string; success: boolean; msg: string}>).forEach(r => {
-            if (r.success) {
-              toast.success(`✅ ${r.msg}`, { duration: 5000 });
-            } else {
-              toast.error(`❌ Auto-Trade Failed (${r.symbol}): ${r.msg}`, { duration: 7000 });
-            }
-          });
-        }
+      // Always show individual trade result messages (success or failure), even during background refresh
+      if (autoTrade && data?.tradeResults) {
+        (data.tradeResults as Array<{symbol: string; success: boolean; msg: string}>).forEach(r => {
+          if (r.success) {
+            toast.success(`✅ ${r.msg}`, { duration: 5000 });
+          } else {
+            toast.error(`❌ Auto-Trade Failed (${r.symbol}): ${r.msg}`, { duration: 7000 });
+          }
+        });
       }
     }
     setScanning(false);
