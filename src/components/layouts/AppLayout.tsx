@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/webhooks', icon: Zap, label: 'TV Webhooks' },
   { path: '/market', icon: ScanLine, label: 'Market Scan' },
   { path: '/strategies', icon: Code2, label: 'Strategies' },
   { path: '/backtest', icon: FlaskConical, label: 'Backtesting' },

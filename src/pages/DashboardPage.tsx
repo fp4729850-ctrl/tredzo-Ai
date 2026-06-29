@@ -14,7 +14,6 @@ import {
 import { getPerformanceSummary, getOpenTrades, getPendingSignals } from '@/services/api';
 import type { Trade, Signal } from '@/types/types';
 import { cn } from '@/lib/utils';
-import { WebhookCard } from '@/components/dashboard/WebhookCard';
 
 const mockChartData = Array.from({ length: 14 }, (_, i) => {
   const base = 10000;
@@ -330,9 +329,6 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
-
-        {/* Webhooks Section */}
-        <WebhookCard webhookToken={webhookToken} />
       </div>
     </AppLayout>
   );

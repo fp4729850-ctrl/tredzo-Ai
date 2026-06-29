@@ -6,6 +6,7 @@ import StrategiesPage from './pages/StrategiesPage';
 import SettingsPage from './pages/SettingsPage';
 import TradeHistoryPage from './pages/TradeHistoryPage';
 import BacktestPage from './pages/BacktestPage';
+import { WebhooksPage } from './pages/WebhooksPage';
 import AdminPage from './pages/AdminPage';
 
 export interface RouteConfig {
@@ -23,6 +24,7 @@ export const routes: RouteConfig[] = [
   { name: 'Strategies', path: '/strategies', element: <StrategiesPage /> },
   { name: 'Trade History', path: '/history', element: <TradeHistoryPage /> },
   { name: 'Backtesting', path: '/backtest', element: <BacktestPage /> },
+  { name: 'Webhooks', path: '/webhooks', element: <WebhooksPage /> },
   { name: 'Settings', path: '/settings', element: <SettingsPage /> },
   { name: 'Admin', path: '/admin', element: <AdminPage /> },
   { name: 'Login', path: '/login', element: <LoginPage />, public: true },
