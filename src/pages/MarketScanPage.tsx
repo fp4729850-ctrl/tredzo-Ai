@@ -144,7 +144,7 @@ function ScanRow({ scan, onSignal }: { scan: ExtendedScan; onSignal: (scan: Exte
 }
 
 export default function MarketScanPage() {
-  const [timeframe, setTimeframe] = useState('1h');
+  const [timeframe, setTimeframe] = useState(() => localStorage.getItem('marketScan_timeframe') || '1h');
   const [gainers, setGainers] = useState<ExtendedScan[]>([]);
   const [losers, setLosers]   = useState<ExtendedScan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,10 +153,17 @@ export default function MarketScanPage() {
   const [isLive, setIsLive]     = useState(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [autoTrade, setAutoTrade]     = useState(false);
-  const [tradeAmountUsdt, setTradeAmountUsdt] = useState(10);
+  const [autoTrade, setAutoTrade]     = useState(() => localStorage.getItem('marketScan_autoTrade') === 'true');
+  const [tradeAmountUsdt, setTradeAmountUsdt] = useState(() => Number(localStorage.getItem('marketScan_tradeAmount')) || 10);
   const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
   const [countdown, setCountdown] = useState(AUTO_REFRESH_SECS);
+
+  // Sync preferences to localStorage
+  useEffect(() => {
+    localStorage.setItem('marketScan_timeframe', timeframe);
+    localStorage.setItem('marketScan_autoTrade', String(autoTrade));
+    localStorage.setItem('marketScan_tradeAmount', String(tradeAmountUsdt));
+  }, [timeframe, autoTrade, tradeAmountUsdt]);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeframeRef = useRef(timeframe);
   useEffect(() => { timeframeRef.current = timeframe; }, [timeframe]);
