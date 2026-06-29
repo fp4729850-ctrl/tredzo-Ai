@@ -278,7 +278,7 @@ function runTredzoScoring(candles: OHLCV[]): TredzoResult {
 async function fetchKlines(symbol: string, interval: string): Promise<OHLCV[]> {
   try {
     const res = await fetch(
-      `${BINANCE_SPOT_BASE}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=300`,
+      `${BINANCE_FUTURES_BASE}/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=300`,
       { signal: AbortSignal.timeout(8_000) }
     );
     if (!res.ok) return [];
@@ -406,10 +406,10 @@ Deno.serve(async (req) => {
     const autoTrade   = body.auto_trade === true;
     const customTradeAmount = body.trade_amount_usdt ? Number(body.trade_amount_usdt) : null;
 
-    // 1. Fetch all USDT tickers
+    // 1. Fetch all USDT tickers from Binance Futures
     let tickers: BinanceTicker[] = [];
     try {
-      const res = await fetch(`${BINANCE_SPOT_BASE}/api/v3/ticker/24hr`, { signal: AbortSignal.timeout(10_000) });
+      const res = await fetch(`${BINANCE_FUTURES_BASE}/fapi/v1/ticker/24hr`, { signal: AbortSignal.timeout(10_000) });
       if (!res.ok) throw new Error(`Binance HTTP ${res.status}`);
       tickers = await res.json();
     } catch (e) {
