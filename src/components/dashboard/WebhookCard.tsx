@@ -13,7 +13,7 @@ export function WebhookCard({ webhookToken }: { webhookToken?: string | null }) 
 
   const payloadStr = `{
   "action": "{{strategy.order.action}}",
-  "symbol": "SOLUSDT",
+  "symbol": "{{ticker}}",
   "price": "{{close}}"
 }`;
 
