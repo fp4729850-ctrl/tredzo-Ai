@@ -1,0 +1,8 @@
+To complete the setup, please run this query in your Supabase SQL Editor:
+
+ALTER TABLE "public"."user_settings"
+ADD COLUMN IF NOT EXISTS "webhook_token" uuid DEFAULT gen_random_uuid();
+
+UPDATE "public"."user_settings"
+SET "webhook_token" = gen_random_uuid()
+WHERE "webhook_token" IS NULL;

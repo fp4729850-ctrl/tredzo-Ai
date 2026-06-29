@@ -153,8 +153,13 @@ export default function MarketScanPage() {
   const [isLive, setIsLive]     = useState(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [autoTrade, setAutoTrade]     = useState(() => localStorage.getItem('marketScan_autoTrade') === 'true');
-  const [tradeAmountUsdt, setTradeAmountUsdt] = useState(() => Number(localStorage.getItem('marketScan_tradeAmount')) || 10);
+  const [autoTrade, setAutoTrade]     = useState(() => {
+    const stored = localStorage.getItem('marketScan_autoTrade');
+    // If not set, default to true
+    return stored === null ? true : stored === 'true';
+  });
+  const [tradeAmountUsdt, setTradeAmountUsdt] = useState(() => Number(localStorage.getItem('marketScan_tradeAmount')) || 20);
+
   const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
   const [countdown, setCountdown] = useState(AUTO_REFRESH_SECS);
 
