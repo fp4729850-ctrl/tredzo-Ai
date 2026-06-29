@@ -5,7 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TrendingUp, TrendingDown, RefreshCw, ScanLine, Zap, Radio, Pause, Play, CheckCircle2, XCircle } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { TrendingUp, TrendingDown, RefreshCw, ScanLine, Zap, Radio, Pause, Play, CheckCircle2, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/db/supabase';
 import type { MarketScan } from '@/types/types';
@@ -145,6 +151,8 @@ export default function MarketScanPage() {
   const [isLive, setIsLive]     = useState(false);
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoTrade, setAutoTrade]     = useState(false);
+  const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
   const [countdown, setCountdown] = useState(AUTO_REFRESH_SECS);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeframeRef = useRef(timeframe);
@@ -165,7 +173,7 @@ export default function MarketScanPage() {
     if (!silent) toast.info('🤖 Tredzo SMC Engine scanning Binance markets...', { icon: '⚡' });
 
     const { data, error } = await supabase.functions.invoke('market-scanner', {
-      body: { timeframe: tf },
+      body: { timeframe: tf, auto_trade: autoTrade },
       method: 'POST',
     });
 
@@ -178,8 +186,15 @@ export default function MarketScanPage() {
       setIsLive(data?.source?.includes('binance_live') ?? false);
       setLastScanned(new Date().toLocaleTimeString());
       const sigCount = data?.totalSignals ?? 0;
+      const tradeCount = data?.tradesPlaced ?? 0;
       if (!silent) {
-        if (sigCount > 0) {
+        if (tradeCount > 0) {
+          toast.success(`🤖 ${tradeCount} Auto-Trade${tradeCount > 1 ? 's' : ''} placed!`, { duration: 6000 });
+          // Show individual trade results
+          (data.tradeResults as Array<{symbol: string; success: boolean; msg: string}>)
+            .filter(r => r.success)
+            .forEach(r => toast.success(`✅ ${r.msg}`, { duration: 5000 }));
+        } else if (sigCount > 0) {
           toast.success(`🎯 ${sigCount} Tredzo signal${sigCount > 1 ? 's' : ''} detected!`, { duration: 5000 });
         } else {
           toast.info('No Tredzo signals yet — market not ready', { duration: 3000 });
@@ -188,7 +203,7 @@ export default function MarketScanPage() {
     }
     setScanning(false);
     setLoading(false);
-  }, []);
+  }, [autoTrade]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setLoading(true);
@@ -264,6 +279,25 @@ export default function MarketScanPage() {
               {autoRefresh ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
               {autoRefresh ? <span className="font-mono">{countdown}s</span> : <span>Auto</span>}
             </button>
+
+            {/* Auto-Trade toggle */}
+            <div
+              className={cn(
+                'flex items-center gap-2 rounded border px-2.5 h-9 text-xs font-medium transition-colors cursor-pointer shrink-0',
+                autoTrade
+                  ? 'border-primary/50 bg-primary/10 text-primary'
+                  : 'border-border bg-muted/30 text-muted-foreground hover:text-foreground hover:border-primary/30'
+              )}
+              onClick={() => autoTrade ? setAutoTrade(false) : setShowAutoTradeConfirm(true)}
+            >
+              <Bot className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Auto-Trade</span>
+              <Switch
+                checked={autoTrade}
+                onCheckedChange={() => autoTrade ? setAutoTrade(false) : setShowAutoTradeConfirm(true)}
+                className="scale-75"
+              />
+            </div>
 
             <Select value={timeframe} onValueChange={setTimeframe}>
               <SelectTrigger className="h-9 w-24 border-border bg-input text-sm">
@@ -420,6 +454,43 @@ export default function MarketScanPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Auto-Trade Confirmation Dialog */}
+      <AlertDialog open={showAutoTradeConfirm} onOpenChange={setShowAutoTradeConfirm}>
+        <AlertDialogContent className="border-border bg-card max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-warning">
+              <Bot className="h-5 w-5" />
+              Enable Auto-Trade?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2 text-left">
+              <p className="text-sm text-foreground font-medium">
+                Tredzo SMC Engine will automatically place real trades on your Binance account every 30 seconds when a valid signal is detected.
+              </p>
+              <ul className="text-xs text-muted-foreground space-y-1 mt-2 list-disc list-inside">
+                <li>Requires Binance API keys in Settings</li>
+                <li>Only trades when Score ≥ 80 + Zone + Sweep + Rejection</li>
+                <li>Dynamic SL at Zone ± 0.5 ATR, TP1 at 1R, TP2 at 2R</li>
+                <li>Won't duplicate — 1 open trade per coin at a time</li>
+                <li>Trade size = your configured USDT amount in Settings</li>
+              </ul>
+              <p className="text-xs text-warning mt-2 font-medium">
+                ⚠️ Real money will be used. Make sure your API keys and trade amount are configured in Settings.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-border">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-primary text-primary-foreground gap-2"
+              onClick={() => { setAutoTrade(true); setShowAutoTradeConfirm(false); toast.success('🤖 Auto-Trade enabled! Bot will trade on next signal.', { duration: 5000 }); }}
+            >
+              <Bot className="h-4 w-4" />
+              Enable Auto-Trade
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
