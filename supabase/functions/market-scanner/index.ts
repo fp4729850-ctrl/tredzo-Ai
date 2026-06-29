@@ -404,6 +404,7 @@ Deno.serve(async (req) => {
     const timeframe   = body.timeframe ?? '1h';
     const topN        = body.top_n ?? 15;
     const autoTrade   = body.auto_trade === true;
+    const customTradeAmount = body.trade_amount_usdt ? Number(body.trade_amount_usdt) : null;
 
     // 1. Fetch all USDT tickers
     let tickers: BinanceTicker[] = [];
@@ -496,6 +497,11 @@ Deno.serve(async (req) => {
             .single() as { data: UserSettings | null };
 
           if (settings?.binance_api_key) {
+            // Override trade amount if provided by the client request
+            if (customTradeAmount && customTradeAmount > 0) {
+              settings.trade_amount_usdt = customTradeAmount;
+            }
+            
             for (const signal of signals) {
               const result = await executeAutoTrade(signal, settings, user.id, sbAdmin);
               tradeResults.push({ symbol: signal.symbol, ...result });

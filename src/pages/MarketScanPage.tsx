@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -152,6 +154,7 @@ export default function MarketScanPage() {
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [autoTrade, setAutoTrade]     = useState(false);
+  const [tradeAmountUsdt, setTradeAmountUsdt] = useState(10);
   const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
   const [countdown, setCountdown] = useState(AUTO_REFRESH_SECS);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -173,7 +176,7 @@ export default function MarketScanPage() {
     if (!silent) toast.info('🤖 Tredzo SMC Engine scanning Binance markets...', { icon: '⚡' });
 
     const { data, error } = await supabase.functions.invoke('market-scanner', {
-      body: { timeframe: tf, auto_trade: autoTrade },
+      body: { timeframe: tf, auto_trade: autoTrade, trade_amount_usdt: tradeAmountUsdt },
       method: 'POST',
     });
 
@@ -472,10 +475,25 @@ export default function MarketScanPage() {
                 <li>Only trades when Score ≥ 80 + Zone + Sweep + Rejection</li>
                 <li>Dynamic SL at Zone ± 0.5 ATR, TP1 at 1R, TP2 at 2R</li>
                 <li>Won't duplicate — 1 open trade per coin at a time</li>
-                <li>Trade size = your configured USDT amount in Settings</li>
               </ul>
+              
+              <div className="pt-4 pb-2">
+                <Label className="text-sm font-semibold text-foreground mb-2 block">Trade Amount (USDT)</Label>
+                <div className="flex items-center gap-2">
+                  <Input 
+                    type="number" 
+                    value={tradeAmountUsdt} 
+                    onChange={(e) => setTradeAmountUsdt(Number(e.target.value))}
+                    className="w-32 bg-input border-border font-mono text-lg"
+                    min="1"
+                    step="1"
+                  />
+                  <span className="text-sm text-muted-foreground">USDT per trade</span>
+                </div>
+              </div>
+
               <p className="text-xs text-warning mt-2 font-medium">
-                ⚠️ Real money will be used. Make sure your API keys and trade amount are configured in Settings.
+                ⚠️ Real money will be used. Bot will use {tradeAmountUsdt} USDT per signal.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
