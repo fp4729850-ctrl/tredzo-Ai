@@ -58,6 +58,171 @@ strategy.exit("TP1-S", from_entry="Short", profit=tp1Pct*100, loss=slPct*100, qt
 strategy.exit("TP2-S", from_entry="Short", profit=tp2Pct*100, loss=slPct*100, qty_percent=30)
 strategy.exit("TP3-S", from_entry="Short", profit=tp3Pct*100, loss=slPct*100, qty_percent=20)`;
 
+const TREDZO_PINESCRIPT = `//@version=6
+strategy("Tredzo Strategy - Top Mover SMC Reversal",
+     overlay = true,
+     initial_capital = 10000,
+     pyramiding = 0,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.05)
+
+// ═══════════════════════════════════════
+// TREDZO STRATEGY — Smart Money Concepts
+// Top Mover Reversal with Elaris SRZ Logic
+// ═══════════════════════════════════════
+
+// Trend Filter
+emaLength     = input.int(200, "EMA Length")
+useEMA        = input.bool(true, "Use EMA Filter")
+
+// ADX Filter
+adxLength     = input.int(14, "ADX Length")
+adxThreshold  = input.float(25.0, "ADX Threshold")
+
+// ATR / Zone Settings
+atrLength     = input.int(14, "ATR Length")
+zoneAtrMult   = input.float(0.35, "ATR Zone Width Multiplier", step=0.01)
+pivotLen      = input.int(6, "Pivot Length", minval=2, maxval=30)
+
+// Volume Filter
+volLength     = input.int(20, "Volume SMA Length")
+volMultiplier = input.float(1.2, "Volume Multiplier", step=0.1)
+
+// Pump / Dump Detection
+lookback      = input.int(50, "Lookback Bars", minval=10)
+pumpPercent   = input.float(8.0, "Pump %")
+dumpPercent   = input.float(-8.0, "Dump %")
+
+// Signal Score Threshold
+minScore      = input.int(80, "Minimum Signal Score", minval=0, maxval=100)
+wickRatio     = input.float(1.4, "Minimum Wick/Body Ratio", step=0.1)
+
+// ═══════════════ CALCULATIONS ═══════════════
+ema200     = ta.ema(close, emaLength)
+atr        = ta.atr(atrLength)
+atrMa      = ta.sma(atr, 50)
+volMA      = ta.sma(volume, volLength)
+
+// ADX (Simplified)
+upMove   = high - high[1]
+downMove = low[1] - low
+plusDM   = (upMove > downMove and upMove > 0) ? upMove : 0
+minusDM  = (downMove > upMove and downMove > 0) ? downMove : 0
+tr       = ta.rma(ta.tr(true), adxLength)
+plusDI   = 100 * ta.rma(plusDM, adxLength) / tr
+minusDI  = 100 * ta.rma(minusDM, adxLength) / tr
+dx       = math.abs(plusDI - minusDI) / (plusDI + minusDI) * 100
+adx      = ta.rma(dx, adxLength)
+
+// Pump / Dump
+priceChange = ((close - close[lookback]) / close[lookback]) * 100
+isPump  = priceChange >= pumpPercent
+isDump  = priceChange <= dumpPercent
+
+// Supply / Demand Zones from Pivot Highs/Lows
+ph = ta.pivothigh(high, pivotLen, pivotLen)
+pl = ta.pivotlow(low, pivotLen, pivotLen)
+
+bullZoneTop = not na(pl) ? pl + atr * zoneAtrMult : na
+bullZoneBot = not na(pl) ? pl : na
+bearZoneTop = not na(ph) ? ph : na
+bearZoneBot = not na(ph) ? ph - atr * zoneAtrMult : na
+
+// Use most recent zones
+var float bZTop = na
+var float bZBot = na
+var float sZTop = na
+var float sZBot = na
+
+if not na(bullZoneTop)
+    bZTop := bullZoneTop
+    bZBot := bullZoneBot
+if not na(bearZoneTop)
+    sZTop := bearZoneTop
+    sZBot := bearZoneBot
+
+// ═══════════════ SIGNALS ═══════════════
+body      = math.abs(close - open)
+safeBody  = body == 0.0 ? syminfo.mintick : body
+upperWick = high - math.max(open, close)
+lowerWick = math.min(open, close) - low
+
+// Filters
+trendBull    = close > ema200
+trendBear    = close < ema200
+volumeOK     = volume > volMA * volMultiplier
+adxOK        = adx > adxThreshold
+atOK         = atr > atrMa * 0.9
+
+// Bull Signal Checks
+bullTouched  = not na(bZTop) and high >= bZBot and low <= bZTop
+bullSweep    = not na(bZBot) and low < bZBot and close > bZBot
+bullReject   = lowerWick / safeBody >= wickRatio
+
+// Bear Signal Checks
+bearTouched  = not na(sZTop) and high >= sZBot and low <= sZTop
+bearSweep    = not na(sZTop) and high > sZTop and close < sZTop
+bearReject   = upperWick / safeBody >= wickRatio
+
+// ═══════════ SCORING ═══════════
+bullScore = 0
+bullScore := bullScore + (isDump      ? 15 : 0)
+bullScore := bullScore + (bullTouched ? 20 : 0)
+bullScore := bullScore + (bullSweep   ? 20 : 0)
+bullScore := bullScore + (bullReject  ? 15 : 0)
+bullScore := bullScore + (volumeOK    ? 10 : 0)
+bullScore := bullScore + (trendBull   ? 10 : 0)
+bullScore := bullScore + (adxOK       ? 5  : 0)
+bullScore := bullScore + (atOK        ? 5  : 0)
+
+bearScore = 0
+bearScore := bearScore + (isPump      ? 15 : 0)
+bearScore := bearScore + (bearTouched ? 20 : 0)
+bearScore := bearScore + (bearSweep   ? 20 : 0)
+bearScore := bearScore + (bearReject  ? 15 : 0)
+bearScore := bearScore + (volumeOK    ? 10 : 0)
+bearScore := bearScore + (trendBear   ? 10 : 0)
+bearScore := bearScore + (adxOK       ? 5  : 0)
+bearScore := bearScore + (atOK        ? 5  : 0)
+
+// ═══════════ ENTRY CONDITIONS ═══════════
+// Mandatory: Zone + Sweep + Rejection must ALL be true
+buySignal  = adxOK and atOK and bullTouched and bullSweep and bullReject and bullScore >= minScore
+sellSignal = adxOK and atOK and bearTouched and bearSweep and bearReject and bearScore >= minScore
+
+// ═══════════ DYNAMIC SL / TP ═══════════
+slPrice_long  = bZBot - atr * 0.5
+risk_long     = close - slPrice_long
+tp1_long      = close + risk_long          // 1R
+tp2_long      = close + risk_long * 2      // 2R
+
+slPrice_short = sZTop + atr * 0.5
+risk_short    = slPrice_short - close
+tp1_short     = close - risk_short
+tp2_short     = close - risk_short * 2
+
+// ═══════════ STRATEGY EXECUTION ═══════════
+if buySignal and strategy.position_size == 0
+    strategy.entry("TZ Long", strategy.long,
+         alert_message='{"action":"BUY","symbol":"{{ticker}}","price":"{{close}}","score":"' + str.tostring(bullScore) + '"}')
+    strategy.exit("TZ Long TP/SL", from_entry="TZ Long",
+         limit=tp1_long, stop=slPrice_long)
+
+if sellSignal and strategy.position_size == 0
+    strategy.entry("TZ Short", strategy.short,
+         alert_message='{"action":"SELL","symbol":"{{ticker}}","price":"{{close}}","score":"' + str.tostring(bearScore) + '"}')
+    strategy.exit("TZ Short TP/SL", from_entry="TZ Short",
+         limit=tp1_short, stop=slPrice_short)
+
+// ═══════════ PLOTS ═══════════
+plot(ema200, color=color.orange, linewidth=2, title="EMA 200")
+
+plotshape(buySignal,  title="BUY",  location=location.belowbar, style=shape.triangleup,   color=color.lime, size=size.small, text="TZ BUY\nScore: " + str.tostring(bullScore))
+plotshape(sellSignal, title="SELL", location=location.abovebar, style=shape.triangledown, color=color.red,  size=size.small, text="TZ SELL\nScore: " + str.tostring(bearScore))
+
+bgcolor(buySignal  ? color.new(color.lime, 92) : na)
+bgcolor(sellSignal ? color.new(color.red,  92) : na)`;
+
 export default function StrategiesPage() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +231,7 @@ export default function StrategiesPage() {
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
   const [interpreting, setInterpreting] = useState<string | null>(null);
   const [executing, setExecuting] = useState<string | null>(null);
+  const [creatingTredzo, setCreatingTredzo] = useState(false);
 
   const [form, setForm] = useState({ name: '', description: '', pinescript_code: SAMPLE_PINESCRIPT, use_ai: true });
   const [saving, setSaving] = useState(false);
@@ -153,6 +319,57 @@ export default function StrategiesPage() {
       toast.error(`Failed to create strategy: ${msg}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCreateTredzoStrategy = async () => {
+    setCreatingTredzo(true);
+    try {
+      const tredzoStrategy = {
+        name: 'Tredzo Strategy (Top Mover SMC)',
+        description: 'Advanced SMC Reversal: Detects 8%+ Pump/Dump moves and confirms entry with Demand/Supply Zone touch, Liquidity Sweep, and Rejection Candle. Score-based filtering (>=80/100). Dynamic SL at Zone ± 0.5 ATR, TP at 1R/2R.',
+        pinescript_code: TREDZO_PINESCRIPT,
+      };
+      const { error } = await createStrategy(tredzoStrategy);
+      if (error) throw new Error(error);
+
+      const strategies = await getStrategies();
+      const saved = strategies[0];
+      if (saved) {
+        // Set tredzo_strategy type and params directly
+        await updateStrategy(saved.id, {
+          strategy_params: {
+            strategy_type: 'tredzo_strategy',
+            trade_direction: 'both',
+            rsi_length: 14,
+            overbought: 70,
+            oversold: 30,
+            ema_fast: 20,
+            ema_slow: 200,
+            symbol: 'BTCUSDT',
+            timeframe: '1h',
+            has_stop_loss: true,
+            has_take_profit: true,
+            tredzo_pump_percent: 8.0,
+            tredzo_dump_percent: -8.0,
+            tredzo_lookback_bars: 50,
+            tredzo_adx_threshold: 25,
+            tredzo_vol_multiplier: 1.2,
+          },
+          timeframe: '1h',
+          symbol: 'BTCUSDT',
+        });
+      }
+      toast.success('🚀 Tredzo Strategy created and pre-configured!', { duration: 5000 });
+      await load();
+      const freshList = await getStrategies();
+      const fresh = freshList.find(s => s.name === 'Tredzo Strategy (Top Mover SMC)');
+      if (fresh) handleSelectStrategy(fresh);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`Failed to create Tredzo Strategy: ${msg}`);
+    } finally {
+      setCreatingTredzo(false);
     }
   };
 
@@ -521,7 +738,28 @@ export default function StrategiesPage() {
             <h1 className="text-lg font-bold text-foreground text-balance">Strategy Manager</h1>
             <p className="text-sm text-muted-foreground">Add PineScript strategies for AI-driven trading</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <div className="flex items-center gap-2">
+            {/* Tredzo Quick-Create Button */}
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 gap-2 h-9 border-primary/50 text-primary hover:bg-primary/10 hover:border-primary"
+              onClick={handleCreateTredzoStrategy}
+              disabled={creatingTredzo}
+            >
+              {creatingTredzo ? (
+                <>
+                  <span className="animate-spin h-3.5 w-3.5 border-2 border-primary border-t-transparent rounded-full inline-block" />
+                  <span className="sr-only md:not-sr-only">Creating...</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="h-3.5 w-3.5" />
+                  <span className="sr-only md:not-sr-only">Tredzo Strategy</span>
+                </>
+              )}
+            </Button>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="shrink-0 gap-2 h-9">
                 <Plus className="h-3.5 w-3.5" />
@@ -588,6 +826,7 @@ export default function StrategiesPage() {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-5">
