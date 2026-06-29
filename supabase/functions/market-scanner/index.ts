@@ -303,7 +303,8 @@ async function executeAutoTrade(
     const { binance_api_key: apiKey, binance_api_secret: apiSecret } = settings;
     if (!apiKey || !apiSecret) return { success: false, msg: 'No Binance API keys' };
 
-    const isFutures = settings.trading_mode === 'futures';
+    // Market Scanner is strictly a Futures bot (needs SL/TP closePosition='true')
+    const isFutures = true;
     const isTestnet = settings.testnet_mode ?? false;
     const base   = isFutures
       ? (isTestnet ? 'https://testnet.binancefuture.com' : BINANCE_FUTURES_BASE)
