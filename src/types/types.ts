@@ -33,6 +33,7 @@ export interface UserSettings {
   whatsapp_phone: string | null;
   whatsapp_api_key: string | null;
   notifications_enabled: boolean;
+  webhook_token?: string | null;
   created_at: string;
   updated_at: string;
 }

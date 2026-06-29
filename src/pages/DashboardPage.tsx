@@ -14,6 +14,7 @@ import {
 import { getPerformanceSummary, getOpenTrades, getPendingSignals } from '@/services/api';
 import type { Trade, Signal } from '@/types/types';
 import { cn } from '@/lib/utils';
+import { WebhookCard } from '@/components/dashboard/WebhookCard';
 
 const mockChartData = Array.from({ length: 14 }, (_, i) => {
   const base = 10000;
@@ -150,17 +151,22 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState({ totalTrades: 0, winRate: 0, totalPnl: 0, totalPnlPct: 0, openTrades: 0 });
   const [openTrades, setOpenTrades] = useState<Trade[]>([]);
   const [signals, setSignals] = useState<Signal[]>([]);
+  const [webhookToken, setWebhookToken] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
-    const [s, trades, sigs] = await Promise.all([
+    const [s, trades, sigs, userSettings] = await Promise.all([
       getPerformanceSummary(),
       getOpenTrades(),
       getPendingSignals(),
+      import('@/services/api').then(m => m.getUserSettings()),
     ]);
     setSummary(s);
     setOpenTrades(trades);
     setSignals(sigs);
+    if (userSettings) {
+      setWebhookToken(userSettings.webhook_token);
+    }
   }, []);
 
   useEffect(() => {
@@ -324,6 +330,9 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Webhooks Section */}
+        <WebhookCard webhookToken={webhookToken} />
       </div>
     </AppLayout>
   );
