@@ -80,8 +80,11 @@ export default function StrategiesPage() {
     rsi_length: string; overbought: string; oversold: string;
     ema_fast: string; ema_slow: string;
     st_multiplier: string; st_lookback: string;
+    // Tredzo Params
+    tredzo_pump_percent: string; tredzo_dump_percent: string; tredzo_lookback_bars: string;
+    tredzo_adx_threshold: string; tredzo_vol_multiplier: string;
     trade_direction: 'long' | 'short' | 'both';
-    strategy_type: 'rsi_ema' | 'supertrend' | 'smc' | 'mixed' | 'custom';
+    strategy_type: 'rsi_ema' | 'supertrend' | 'smc' | 'mixed' | 'custom' | 'tredzo_strategy';
   }>({
     stop_loss_pct: '', take_profit_pct: '', position_size_pct: '',
     tp1_pct: '', tp2_pct: '', tp3_pct: '',
@@ -90,6 +93,8 @@ export default function StrategiesPage() {
     rsi_length: '14', overbought: '70', oversold: '30',
     ema_fast: '20', ema_slow: '50',
     st_multiplier: '2.0', st_lookback: '10',
+    tredzo_pump_percent: '8.0', tredzo_dump_percent: '-8.0', tredzo_lookback_bars: '50',
+    tredzo_adx_threshold: '25', tredzo_vol_multiplier: '1.2',
     trade_direction: 'both',
     strategy_type: 'rsi_ema',
   });
@@ -190,24 +195,26 @@ export default function StrategiesPage() {
       tp3_size_pct: s.tp3_size_pct != null ? String(s.tp3_size_pct) : '',
       trade_amount_usdt: s.trade_amount_usdt != null ? String(s.trade_amount_usdt) : '',
       // Indicator params from strategy_params
-      symbol: p?.symbol ?? '',
       rsi_length: p?.rsi_length != null ? String(p.rsi_length) : '14',
       overbought: p?.overbought != null ? String(p.overbought) : '70',
       oversold: p?.oversold != null ? String(p.oversold) : '30',
       ema_fast: p?.ema_fast != null ? String(p.ema_fast) : '20',
       ema_slow: p?.ema_slow != null ? String(p.ema_slow) : '50',
-      st_multiplier: p?.st_multiplier != null ? String(p.st_multiplier) : '2.0',
-      st_lookback: p?.st_lookback != null ? String(p.st_lookback) : '10',
+      st_multiplier: p?.st_multiplier?.toString() ?? '2.0',
+      st_lookback:   p?.st_lookback?.toString()   ?? '10',
+      tredzo_pump_percent: p?.tredzo_pump_percent?.toString() ?? '8.0',
+      tredzo_dump_percent: p?.tredzo_dump_percent?.toString() ?? '-8.0',
+      tredzo_lookback_bars: p?.tredzo_lookback_bars?.toString() ?? '50',
+      tredzo_adx_threshold: p?.tredzo_adx_threshold?.toString() ?? '25',
+      tredzo_vol_multiplier: p?.tredzo_vol_multiplier?.toString() ?? '1.2',
       trade_direction: p?.trade_direction ?? 'both',
       strategy_type: p?.strategy_type ?? 'rsi_ema',
     });
-    // Sync custom_inputs local state
     setCustomInputs(p?.custom_inputs ? JSON.parse(JSON.stringify(p.custom_inputs)) : []);
   }, []);
 
   const runAnalyze = async (strategy: Strategy, showToast = true, useAI: boolean = true) => {
     setInterpreting(strategy.id);
-    // Preserve the user's manually selected timeframe before analysis
     const userTimeframe = strategy.timeframe ?? null;
     const { data, error } = await supabase.functions.invoke('analyze-pinescript', {
       body: { strategyId: strategy.id, code: strategy.pinescript_code, use_ai: useAI },
@@ -223,16 +230,13 @@ export default function StrategiesPage() {
       await updateStrategy(strategy.id, { ai_interpretation: fallback });
       if (showToast) toast.warning('Analyzed in demo mode — connect Supabase for full extraction');
     }
-    // Reload fresh strategy from DB
     const updated = await getStrategies();
     setStrategies(updated);
     const fresh = updated.find(s => s.id === strategy.id) ?? null;
     if (fresh) {
       if (showToast) {
-        // Rich toast showing every extracted setting
         const risk = data?.risk as { tp1_pct?: number; tp2_pct?: number; tp3_pct?: number; stop_loss_pct?: number } | undefined;
         const params = fresh.strategy_params as { timeframe?: string; symbol?: string; rsi_length?: number; trade_direction?: string } | null;
-        // Show user's preserved timeframe (not AI-extracted, which may differ)
         const tf = fresh.timeframe ?? userTimeframe ?? params?.timeframe ?? '1h';
         const lines: string[] = [];
         lines.push(`⏱️ Timeframe auto-set: ${tf.toUpperCase()}`);
@@ -251,10 +255,8 @@ export default function StrategiesPage() {
           { duration: 8000 }
         );
       }
-      // Pulse the just-analyzed strategy's TF button for 3s
       setJustAnalyzedId(strategy.id);
       setTimeout(() => setJustAnalyzedId(null), 3000);
-      // Re-sync Risk Settings panel
       if (selectedStrategy?.id === strategy.id || !showToast) {
         handleSelectStrategy(fresh);
       }
@@ -264,14 +266,12 @@ export default function StrategiesPage() {
 
   const handleAIInterpret = (strategy: Strategy) => runAnalyze(strategy, true);
 
-  // ── Helper: build chartRiskConfig from a strategy object ──────────────────
   const buildRiskConfig = useCallback((s: Strategy): StrategyRiskConfig | null => {
     let p = s.strategy_params as StrategyParams | null;
     if (!p) return null;
 
-    // Apply dynamic custom_inputs overrides
     if (p.custom_inputs && p.custom_inputs.length > 0) {
-      p = { ...p }; // Shallow copy
+      p = { ...p };
       const mapping: Record<string, (v: number) => void> = {};
       const set = (keys: string[], fn: (v: number) => void) => keys.forEach(k => mapping[k] = fn);
 
@@ -302,6 +302,11 @@ export default function StrategiesPage() {
       ema_slow:              p.ema_slow          ?? 50,
       st_multiplier:         p.st_multiplier     ?? 2.0,
       st_lookback:           p.st_lookback       ?? 10,
+      tredzo_pump_percent:   p.tredzo_pump_percent ?? 8.0,
+      tredzo_dump_percent:   p.tredzo_dump_percent ?? -8.0,
+      tredzo_lookback_bars:  p.tredzo_lookback_bars ?? 50,
+      tredzo_adx_threshold:  p.tredzo_adx_threshold ?? 25,
+      tredzo_vol_multiplier: p.tredzo_vol_multiplier ?? 1.2,
       rsi_filter_enabled:    p.rsi_filter_enabled ?? false,
       rsi_filter_long_level: p.rsi_filter_long_level ?? 50,
       trade_direction:       p.trade_direction   ?? 'both',
@@ -312,24 +317,19 @@ export default function StrategiesPage() {
     };
   }, []);
 
-  // Sync risk form when a strategy is selected
   const handleSelectStrategy = useCallback((s: Strategy) => {
     setSelectedStrategy(s);
     syncRiskForm(s);
     const p = s.strategy_params as StrategyParams | null;
-    // Auto-populate chart signals if strategy is already analyzed
     const cfg = buildRiskConfig(s);
     if (cfg) {
       setChartRiskConfig(cfg);
-      // Re-analyze silently if strategy_type missing (old format from pre-v46 analysis)
       if (!p?.strategy_type && s.pinescript_code && !s.ai_interpretation) {
         runAnalyze(s, false);
       }
     } else if (s.pinescript_code && !s.ai_interpretation) {
-      // Strategy not analyzed yet — run silently so signals appear automatically
       runAnalyze(s, false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildRiskConfig, syncRiskForm]);
 
   const handleSaveRisk = async () => {
@@ -338,11 +338,9 @@ export default function StrategiesPage() {
     const n = (v: string) => v !== '' ? parseFloat(v) : null;
 
     try {
-      // Build updated strategy_params (indicator params)
       const existingParams = (selectedStrategy.strategy_params as StrategyParams | null) ?? {} as StrategyParams;
       const updatedParams: StrategyParams = {
         ...existingParams,
-        symbol:        riskForm.symbol?.trim().toUpperCase() || existingParams.symbol,
         strategy_type: riskForm.strategy_type,
         rsi_length:    n(riskForm.rsi_length)    ?? existingParams.rsi_length    ?? 14,
         overbought:    n(riskForm.overbought)    ?? existingParams.overbought    ?? 70,
@@ -351,8 +349,12 @@ export default function StrategiesPage() {
         ema_slow:      n(riskForm.ema_slow)      ?? existingParams.ema_slow      ?? 50,
         st_multiplier: n(riskForm.st_multiplier) ?? existingParams.st_multiplier ?? 2.0,
         st_lookback:   n(riskForm.st_lookback)   ?? existingParams.st_lookback   ?? 10,
+        tredzo_pump_percent: n(riskForm.tredzo_pump_percent) ?? existingParams.tredzo_pump_percent ?? 8.0,
+        tredzo_dump_percent: n(riskForm.tredzo_dump_percent) ?? existingParams.tredzo_dump_percent ?? -8.0,
+        tredzo_lookback_bars: n(riskForm.tredzo_lookback_bars) ?? existingParams.tredzo_lookback_bars ?? 50,
+        tredzo_adx_threshold: n(riskForm.tredzo_adx_threshold) ?? existingParams.tredzo_adx_threshold ?? 25,
+        tredzo_vol_multiplier: n(riskForm.tredzo_vol_multiplier) ?? existingParams.tredzo_vol_multiplier ?? 1.2,
         trade_direction: riskForm.trade_direction,
-        // ✅ Save user-edited custom_inputs
         custom_inputs: customInputs.length > 0 ? customInputs : existingParams.custom_inputs,
       };
 
@@ -370,23 +372,17 @@ export default function StrategiesPage() {
         strategy_params: updatedParams,
       };
       const { error } = await updateStrategy(selectedStrategy.id, patch);
-      if (error) {
-        throw new Error(error);
-      }
+      if (error) throw new Error(error);
 
       toast.success('Risk settings saved — indicator params + risk updated!', { icon: '🛡️' });
       const updated = await getStrategies();
       setStrategies(updated);
       const fresh = updated.find(s => s.id === selectedStrategy.id) ?? null;
-      if (!fresh) {
-        throw new Error('Failed to retrieve updated strategy after save');
-      }
+      if (!fresh) throw new Error('Failed to retrieve updated strategy after save');
       setSelectedStrategy(fresh);
 
-      // Build riskConfig for live chart overlay using saved params + strategy params
       const cfg = buildRiskConfig(fresh);
       if (cfg) {
-        const nv = (v: string) => v !== '' ? parseFloat(v) : null;
         setChartRiskConfig({
           ...cfg,
           strategy_type:  riskForm.strategy_type,
@@ -395,10 +391,10 @@ export default function StrategiesPage() {
           oversold:       n(riskForm.oversold)      ?? cfg.oversold,
           ema_fast:       n(riskForm.ema_fast)      ?? cfg.ema_fast,
           ema_slow:       n(riskForm.ema_slow)      ?? cfg.ema_slow,
-          stop_loss_pct:  nv(riskForm.stop_loss_pct),
-          tp1_pct:        nv(riskForm.tp1_pct),
-          tp2_pct:        nv(riskForm.tp2_pct),
-          tp3_pct:        nv(riskForm.tp3_pct),
+          stop_loss_pct:  n(riskForm.stop_loss_pct),
+          tp1_pct:        n(riskForm.tp1_pct),
+          tp2_pct:        n(riskForm.tp2_pct),
+          tp3_pct:        n(riskForm.tp3_pct),
           trade_direction: riskForm.trade_direction,
         });
       }
@@ -410,13 +406,11 @@ export default function StrategiesPage() {
     }
   };
 
-  // ── Apply current Risk Settings to ALL strategies ──────────────────────
   const handleSaveRiskForAll = async () => {
     if (strategies.length === 0) return;
     setSavingRiskAll(true);
     const n = (v: string) => v !== '' ? parseFloat(v) : null;
     try {
-      // Only apply money management — each strategy keeps its own symbol, indicators & custom_inputs
       const patch: Partial<Strategy> = {
         stop_loss_pct:     n(riskForm.stop_loss_pct),
         take_profit_pct:   n(riskForm.take_profit_pct),
@@ -451,14 +445,12 @@ export default function StrategiesPage() {
 
   const handleSymbolChange = async (strategy: Strategy, sym: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    // Multi-select: toggle sym in/out of the symbols array
     const current = strategy.symbols ?? [strategy.symbol ?? strategy.strategy_params?.symbol ?? 'BTCUSDT'];
     const next = current.includes(sym)
       ? current.filter(s => s !== sym).length > 0
         ? current.filter(s => s !== sym)
-        : current                      // keep at least one
+        : current
       : [...current, sym];
-    // primary symbol = first in array
     const primary = next[0];
     setStrategies(prev => prev.map(s => s.id === strategy.id ? { ...s, symbols: next, symbol: primary } : s));
     if (selectedStrategy?.id === strategy.id)
@@ -472,7 +464,6 @@ export default function StrategiesPage() {
     );
   };
 
-  // ── Bot status helpers ──
   const TF_MS: Record<string, number> = {
     '1m': 60_000, '5m': 300_000, '15m': 900_000, '30m': 1_800_000,
     '1h': 3_600_000, '4h': 14_400_000, '1d': 86_400_000,
@@ -525,7 +516,6 @@ export default function StrategiesPage() {
   return (
     <AppLayout>
       <div className="p-4 md:p-6 space-y-4">
-        {/* Header */}
         <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-lg font-bold text-foreground text-balance">Strategy Manager</h1>
@@ -600,9 +590,7 @@ export default function StrategiesPage() {
           </Dialog>
         </div>
 
-        {/* Content */}
         <div className="grid gap-4 md:grid-cols-5">
-          {/* Strategy List */}
           <div className="md:col-span-2 space-y-2">
             {loading ? (
               [...Array(3)].map((_, i) => <Skeleton key={i} className="h-20 w-full bg-muted" />)
@@ -689,7 +677,6 @@ export default function StrategiesPage() {
                       <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
-                  {/* Symbol picker — multi-select */}
                   <div className="mt-2 flex items-center gap-1 flex-wrap" onClick={e => e.stopPropagation()}>
                     <span className="text-[10px] text-muted-foreground shrink-0">Symbol:</span>
                     {(['BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','DOGEUSDT'] as const).map(sym => {
@@ -711,7 +698,6 @@ export default function StrategiesPage() {
                         </button>
                       );
                     })}
-                    {/* count badge when >1 active */}
                     {(() => {
                       const cnt = (strategy.symbols ?? [strategy.symbol ?? 'BTCUSDT']).length;
                       return cnt > 1 ? (
@@ -719,7 +705,6 @@ export default function StrategiesPage() {
                       ) : null;
                     })()}
                   </div>
-                  {/* Timeframe picker */}
                   <div className="mt-1.5 flex items-center gap-1 flex-wrap" onClick={e => e.stopPropagation()}>
                     <span className="text-[10px] text-muted-foreground shrink-0">Timeframe:</span>
                     {(['1m','5m','15m','30m','1h','4h','1d'] as const).map(tf => {
@@ -745,10 +730,8 @@ export default function StrategiesPage() {
                       <span className="text-[10px] text-primary animate-pulse ml-1">← AI set</span>
                     )}
                   </div>
-                  {/* Bot run status — visible when active */}
                   {strategy.status === 'active' && (
                     <div className="mt-1.5 flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
-                      {/* Last signal badge */}
                       {strategy.last_signal && (
                         <span className={cn(
                           'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium border',
@@ -762,19 +745,16 @@ export default function StrategiesPage() {
                           {strategy.last_signal}
                         </span>
                       )}
-                      {/* Last run */}
                       <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
                         <Clock className="h-2.5 w-2.5 shrink-0" />
                         {getLastRunLabel(strategy.last_executed_at)}
                       </span>
-                      {/* Next run countdown */}
                       <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
                         <Bot className="h-2.5 w-2.5 shrink-0 text-primary" />
                         Next: <span className="font-mono text-foreground">{getNextRunLabel(strategy)}</span>
                       </span>
                     </div>
                   )}
-                  {/* P&L row — shown when there are trades for this symbol */}
                   {(() => {
                     const sym = strategy.symbol ?? strategy.strategy_params?.symbol ?? 'BTCUSDT';
                     const pnl = pnlMap[sym];
@@ -807,7 +787,6 @@ export default function StrategiesPage() {
             )}
           </div>
 
-          {/* Strategy Detail / Code View */}
           <div className="md:col-span-3">
             {selectedStrategy ? (
               <Card className="h-full border-border bg-card">
@@ -825,10 +804,8 @@ export default function StrategiesPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="px-4 pb-4 space-y-3">
-                  {/* Strategy Params Panel */}
                   {selectedStrategy.strategy_params && (() => {
                     const p = selectedStrategy.strategy_params as StrategyParams;
-                    // User-selected overrides take priority over AI-extracted values
                     const displaySymbol = selectedStrategy.symbol ?? p.symbol;
                     const displayTF = selectedStrategy.timeframe ?? p.timeframe;
                     const activeSymbols = selectedStrategy.symbols ?? [displaySymbol];
@@ -877,7 +854,6 @@ export default function StrategiesPage() {
                             <span className="font-mono font-medium text-foreground">{p.ema_slow}</span>
                           </div>
                         </div>
-                        {/* Active symbols list — shows all selected */}
                         {activeSymbols.length > 0 && (
                           <div className="pt-2 border-t border-border/50 space-y-1.5">
                             <span className="text-[10px] text-muted-foreground">Active Symbols ({activeSymbols.length})</span>
@@ -890,7 +866,6 @@ export default function StrategiesPage() {
                             </div>
                           </div>
                         )}
-                        {/* SL/TP badges */}
                         <div className="flex items-center gap-2 pt-1 border-t border-border/50">
                           <span className={cn('text-[10px] flex items-center gap-1', p.has_stop_loss ? 'text-success' : 'text-muted-foreground/50')}>
                             {p.has_stop_loss ? '✓' : '✗'} Stop Loss
@@ -904,29 +879,20 @@ export default function StrategiesPage() {
                     );
                   })()}
 
-                  {/* ── Live Candlestick Chart ── */}
-                  {(() => {
-                    const p = selectedStrategy.strategy_params as StrategyParams | null;
-                    const chartSymbol = selectedStrategy.symbol ?? p?.symbol ?? 'BTCUSDT';
-                    const chartTF = selectedStrategy.timeframe ?? p?.timeframe ?? '1h';
-                    return (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <BarChart2 className="h-3.5 w-3.5 text-primary" />
-                          <span className="text-xs font-medium text-foreground">Live Chart</span>
-                          <Badge variant="outline" className="text-[10px] border-primary/30 text-primary ml-auto">TradingView Style</Badge>
-                        </div>
-                        <StrategyLiveChart
-                          symbol={chartSymbol}
-                          timeframe={chartTF}
-                          strategyId={selectedStrategy.id}
-                          riskConfig={chartRiskConfig}
-                        />
-                      </div>
-                    );
-                  })()}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <BarChart2 className="h-3.5 w-3.5 text-primary" />
+                      <span className="text-xs font-medium text-foreground">Live Chart</span>
+                      <Badge variant="outline" className="text-[10px] border-primary/30 text-primary ml-auto">TradingView Style</Badge>
+                    </div>
+                    <StrategyLiveChart
+                      symbol={selectedStrategy.symbol ?? 'BTCUSDT'}
+                      timeframe={selectedStrategy.timeframe ?? '1h'}
+                      strategyId={selectedStrategy.id}
+                      riskConfig={chartRiskConfig}
+                    />
+                  </div>
 
-                  {/* ── Per-strategy Risk Settings ── */}
                   <div ref={riskPanelRef} className="rounded border border-border bg-muted/20 p-3 space-y-3">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-1.5">
@@ -937,21 +903,21 @@ export default function StrategiesPage() {
                       <span className="text-[10px] text-muted-foreground">AI-extracted · user-editable</span>
                     </div>
 
-                    {/* ALWAYS SHOW Strategy Type & Direction */}
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label className="text-[11px] font-normal text-muted-foreground">Bot Execution Logic</Label>
-                        <select value={riskForm.strategy_type} onChange={e => setRiskForm(f => ({ ...f, strategy_type: e.target.value as typeof f.strategy_type }))} className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                        <select value={riskForm.strategy_type} onChange={e => setRiskForm(f => ({ ...f, strategy_type: e.target.value as any }))} className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
                           <option value="rsi_ema">RSI &amp; EMA</option>
                           <option value="supertrend">Pure Price Action (SuperTrend)</option>
                           <option value="mixed">Mixed (SuperTrend + RSI)</option>
+                          <option value="tredzo_strategy">Tredzo Strategy (Top Mover SMC)</option>
                           <option value="smc">Smart Money Concepts</option>
                           <option value="custom">Custom Strategy</option>
                         </select>
                       </div>
                       <div className="space-y-1">
                         <Label className="text-[11px] font-normal text-muted-foreground">Trade Direction</Label>
-                        <select value={riskForm.trade_direction} onChange={e => setRiskForm(f => ({ ...f, trade_direction: e.target.value as typeof f.trade_direction }))} className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                        <select value={riskForm.trade_direction} onChange={e => setRiskForm(f => ({ ...f, trade_direction: e.target.value as any }))} className="h-8 w-full rounded-md border border-border bg-input px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
                           <option value="both">Both (Long + Short)</option>
                           <option value="long">Long Only</option>
                           <option value="short">Short Only</option>
@@ -959,7 +925,6 @@ export default function StrategiesPage() {
                       </div>
                     </div>
 
-                    {/* ── Indicator Settings: hidden when dynamic inputs exist ── */}
                     {!(selectedStrategy?.strategy_params?.custom_inputs?.length) && (
                       <div className="rounded border border-primary/20 bg-primary/5 p-3 space-y-3">
                         <div className="flex items-center gap-1.5">
@@ -972,9 +937,9 @@ export default function StrategiesPage() {
                           <div className="space-y-1.5">
                             <span className="text-[11px] font-medium text-foreground flex items-center gap-1"><Activity className="h-3 w-3 text-primary" /> RSI Settings</span>
                             <div className="grid grid-cols-3 gap-2">
-                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Length</Label><Input type="number" min={2} max={200} step={1} value={riskForm.rsi_length} onChange={e => setRiskForm(f => ({ ...f, rsi_length: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
-                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground flex items-center gap-1"><TrendingDown className="h-3 w-3 text-destructive" />Overbought</Label><Input type="number" min={50} max={99} step={1} value={riskForm.overbought} onChange={e => setRiskForm(f => ({ ...f, overbought: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
-                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-success" />Oversold</Label><Input type="number" min={1} max={49} step={1} value={riskForm.oversold} onChange={e => setRiskForm(f => ({ ...f, oversold: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Length</Label><Input type="number" value={riskForm.rsi_length} onChange={e => setRiskForm(f => ({ ...f, rsi_length: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Overbought</Label><Input type="number" value={riskForm.overbought} onChange={e => setRiskForm(f => ({ ...f, overbought: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Oversold</Label><Input type="number" value={riskForm.oversold} onChange={e => setRiskForm(f => ({ ...f, oversold: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
                             </div>
                           </div>
                         )}
@@ -983,8 +948,8 @@ export default function StrategiesPage() {
                           <div className="space-y-1.5">
                             <span className="text-[11px] font-medium text-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-primary" /> EMA Settings</span>
                             <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Fast Period</Label><Input type="number" min={1} max={500} step={1} value={riskForm.ema_fast} onChange={e => setRiskForm(f => ({ ...f, ema_fast: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
-                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Slow Period</Label><Input type="number" min={1} max={500} step={1} value={riskForm.ema_slow} onChange={e => setRiskForm(f => ({ ...f, ema_slow: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Fast Period</Label><Input type="number" value={riskForm.ema_fast} onChange={e => setRiskForm(f => ({ ...f, ema_fast: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Slow Period</Label><Input type="number" value={riskForm.ema_slow} onChange={e => setRiskForm(f => ({ ...f, ema_slow: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
                             </div>
                           </div>
                         )}
@@ -993,13 +958,35 @@ export default function StrategiesPage() {
                           <div className="space-y-1.5">
                             <span className="text-[11px] font-medium text-foreground flex items-center gap-1"><Zap className="h-3 w-3 text-warning" /> SuperTrend Settings</span>
                             <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Multiplier</Label><Input type="number" min={0.1} max={20} step={0.1} value={riskForm.st_multiplier} onChange={e => setRiskForm(f => ({ ...f, st_multiplier: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
-                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Lookback Period</Label><Input type="number" min={1} max={200} step={1} value={riskForm.st_lookback} onChange={e => setRiskForm(f => ({ ...f, st_lookback: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Multiplier</Label><Input type="number" step={0.1} value={riskForm.st_multiplier} onChange={e => setRiskForm(f => ({ ...f, st_multiplier: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Lookback Period</Label><Input type="number" step={1} value={riskForm.st_lookback} onChange={e => setRiskForm(f => ({ ...f, st_lookback: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
                             </div>
                           </div>
                         )}
 
-                        <p className="text-[10px] text-primary/70">✨ AI Analyze karne ke baad sab fields auto-fill ho jaate hain. Aap inhe manually bhi edit kar sakte hain.</p>
+                        {riskForm.strategy_type === 'tredzo_strategy' && (
+                          <div className="space-y-2">
+                            <span className="text-[11px] font-medium text-foreground flex items-center gap-1"><Zap className="h-3 w-3 text-primary" /> Tredzo SMC Thresholds</span>
+                            
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Pump %</Label><Input type="number" step={0.1} value={riskForm.tredzo_pump_percent} onChange={e => setRiskForm(f => ({ ...f, tredzo_pump_percent: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Dump %</Label><Input type="number" step={0.1} value={riskForm.tredzo_dump_percent} onChange={e => setRiskForm(f => ({ ...f, tredzo_dump_percent: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Lookback (Bars)</Label><Input type="number" min={1} step={1} value={riskForm.tredzo_lookback_bars} onChange={e => setRiskForm(f => ({ ...f, tredzo_lookback_bars: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Min ADX Level</Label><Input type="number" step={1} value={riskForm.tredzo_adx_threshold} onChange={e => setRiskForm(f => ({ ...f, tredzo_adx_threshold: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                              <div className="space-y-0.5"><Label className="text-[10px] text-muted-foreground">Vol MA Multiplier</Label><Input type="number" step={0.1} value={riskForm.tredzo_vol_multiplier} onChange={e => setRiskForm(f => ({ ...f, tredzo_vol_multiplier: e.target.value }))} className="h-7 bg-input border-border text-xs font-mono" /></div>
+                            </div>
+                            
+                            <div className="rounded border border-warning/30 bg-warning/5 p-2">
+                              <div className="text-[10px] text-warning font-medium">Dynamic SMC Orders Active</div>
+                              <div className="text-[9px] text-muted-foreground mt-0.5 leading-tight">
+                                This strategy ignores static % inputs below. It dynamically calculates SL at Zone ± 0.5 ATR and targets 1R / 2R.
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 

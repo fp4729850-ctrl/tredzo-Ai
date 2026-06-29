@@ -47,7 +47,7 @@ export interface CustomInput {
 
 export interface StrategyParams {
   custom_inputs?: CustomInput[];
-  strategy_type?: 'rsi_ema' | 'supertrend' | 'smc' | 'mixed';
+  strategy_type?: 'rsi_ema' | 'supertrend' | 'smc' | 'mixed' | 'tredzo_strategy';
   rsi_length: number;
   overbought: number;
   oversold: number;
@@ -58,6 +58,14 @@ export interface StrategyParams {
   rsi_filter_enabled?: boolean;
   rsi_filter_long_level?: number;
   rsi_filter_short_level?: number;
+  
+  // Tredzo Strategy Params
+  tredzo_pump_percent?: number;
+  tredzo_dump_percent?: number;
+  tredzo_lookback_bars?: number;
+  tredzo_adx_threshold?: number;
+  tredzo_vol_multiplier?: number;
+  
   symbol: string;
   timeframe: string;
   has_stop_loss: boolean;
