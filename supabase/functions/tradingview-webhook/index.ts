@@ -114,7 +114,8 @@ serve(async (req) => {
     // Find active strategy to tie trade to (or default)
     let strategyId = payload.strategyId;
 
-    const qty = await calcQtyForSymbol(base, prefix, symbol, price, effectiveSize, null);
+    const fixedUsdt = payload.fixedUsdt ?? settings.trade_amount_usdt ?? null;
+    const qty = await calcQtyForSymbol(base, prefix, symbol, price, effectiveSize, fixedUsdt);
     
     let order: Record<string, unknown> | null = null;
     let reason = 'Webhook triggered';
