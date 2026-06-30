@@ -169,7 +169,7 @@ interface TredzoResult {
   dynamicSL?: number; dynamicTP1?: number; dynamicTP2?: number;
 }
 
-function runTredzoScoring(candles: OHLCV[]): TredzoResult {
+function runTredzoScoring(candles: OHLCV[], scanType: 'gainer' | 'loser'): TredzoResult {
   const HOLD = (r: string): TredzoResult => ({ signal: 'HOLD', score: 0, mandatoryOk: false, reason: r });
   if (candles.length < 60) return HOLD('Not enough data');
 
@@ -234,7 +234,7 @@ function runTredzoScoring(candles: OHLCV[]): TredzoResult {
   if (adxOk)      bullScore += 5;
   if (atrOk)      bullScore += 5;
 
-  if (bullScore >= 80 && bullTouch && bullSweep && bullReject) {
+  if (scanType === 'loser' && bullScore >= 80 && bullTouch && bullSweep && bullReject) {
     const sl   = bullZone!.bot - atr * 0.5;
     const risk = price - sl;
     const parts = [
@@ -258,7 +258,7 @@ function runTredzoScoring(candles: OHLCV[]): TredzoResult {
   if (adxOk)      bearScore += 5;
   if (atrOk)      bearScore += 5;
 
-  if (bearScore >= 80 && bearTouch && bearSweep && bearReject) {
+  if (scanType === 'gainer' && bearScore >= 80 && bearTouch && bearSweep && bearReject) {
     const sl   = bearZone!.top + atr * 0.5;
     const risk = sl - price;
     const parts = [
@@ -496,7 +496,7 @@ Deno.serve(async (req) => {
         const changePct = parseFloat(ticker.priceChangePercent);
         const volume    = parseFloat(ticker.quoteVolume);
         const candles   = await fetchKlines(ticker.symbol, timeframe);
-        const tredzo    = runTredzoScoring(candles);
+        const tredzo    = runTredzoScoring(candles, type);
 
         const item: ScanItem = {
           id: `${type}-${idx}`, symbol: ticker.symbol,
