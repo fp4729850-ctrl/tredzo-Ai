@@ -91,6 +91,11 @@ serve(async (req) => {
     const payload = await req.json();
     const client = sb();
 
+    if (payload.action === "DEBUG_SIGNALS") {
+      const { data } = await client.from("signals").select("*").order("created_at", { ascending: false }).limit(20);
+      return new Response(JSON.stringify(data), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     // ── PROXY: Bypass US IP restriction ──
     if (!payload.is_proxied) {
       console.log(`[webhook] Proxying via DB...`);
@@ -138,7 +143,7 @@ serve(async (req) => {
 
     let order: Record<string, unknown> | null = null;
     let reason = '';
-    let logDirection = action === 'BUY' ? 'long' : 'short';
+    let logDirection = action === 'BUY' ? 'buy' : 'sell';
 
     // ══════════════════════════════════════════════
     //  EXIT LOGIC: type = "tp" (partial) or "sl" (full)
@@ -159,7 +164,7 @@ serve(async (req) => {
       }
 
       const closeSide = existingPos.side === 'LONG' ? 'SELL' : 'BUY';
-      logDirection = existingPos.side === 'LONG' ? 'long' : 'short';
+      logDirection = existingPos.side === 'LONG' ? 'buy' : 'sell';
       let closeQty = existingPos.qty;
 
       if (tradeType === 'tp') {
@@ -236,7 +241,7 @@ serve(async (req) => {
 
     const side = action === 'BUY' ? 'BUY' : 'SELL';
     const closeSide = side === 'BUY' ? 'SELL' : 'BUY';
-    logDirection = side === 'BUY' ? 'long' : 'short';
+    logDirection = side === 'BUY' ? 'buy' : 'sell';
 
     // Check existing position (skip if already in a trade)
     if (tradingMode === 'futures') {
