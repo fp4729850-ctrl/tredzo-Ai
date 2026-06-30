@@ -3,6 +3,7 @@ import {
   createChart,
   ColorType,
   CrosshairMode,
+  CandlestickSeries,
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts';
@@ -62,9 +63,8 @@ export function CandlestickChart({ candles, trades = [], symbol }: CandlestickCh
     });
     chartRef.current = chart;
 
-    // Add candlestick series using v5 runtime API (typings.d.ts incomplete)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const candleSeries = (chart as any).addCandlestickSeries({
+    // Add candlestick series using v5 API
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#22c55e',
       downColor: '#ef4444',
       borderUpColor: '#22c55e',
