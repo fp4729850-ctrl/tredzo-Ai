@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { History, Search, TrendingUp, TrendingDown, Download } from 'lucide-react';
+import { History, Search, TrendingUp, TrendingDown, Download, RefreshCw } from 'lucide-react';
+import { supabase } from '@/db/supabase';
 import { getTrades } from '@/services/api';
 import type { Trade } from '@/types/types';
 import { cn } from '@/lib/utils';
@@ -27,6 +28,7 @@ export default function TradeHistoryPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [directionFilter, setDirectionFilter] = useState('all');
+  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async (p = 0) => {
     const data = await getTrades(PAGE_SIZE, p * PAGE_SIZE);
@@ -80,6 +82,26 @@ export default function TradeHistoryPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('sync-trades', { method: 'POST' });
+      if (error || (data && !data.success)) {
+        throw new Error(error?.message || data?.error || 'Failed to sync');
+      }
+      if (data?.synced > 0) {
+        toast.success(`Synced ${data.synced} closed trades from Binance!`);
+        await load(0); // reload page 0
+      } else {
+        toast.info('All trades are up to date.');
+      }
+    } catch (err: any) {
+      toast.error(`Sync error: ${err.message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <AppLayout>
       <div className="p-4 md:p-6 space-y-4">
@@ -89,16 +111,28 @@ export default function TradeHistoryPage() {
             <h1 className="text-lg font-bold text-foreground text-balance">Trade History</h1>
             <p className="text-sm text-muted-foreground">Complete record of all executed trades</p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExport}
-            className="shrink-0 h-9 gap-2 border-border"
-            disabled={filtered.length === 0}
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span className="sr-only md:not-sr-only">Export CSV</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSync}
+              disabled={syncing}
+              className="shrink-0 h-9 gap-2 border-primary/20 text-primary hover:bg-primary/10"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", syncing && "animate-spin")} />
+              <span className="sr-only md:not-sr-only">Sync Binance</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              className="shrink-0 h-9 gap-2 border-border"
+              disabled={filtered.length === 0}
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span className="sr-only md:not-sr-only">Export CSV</span>
+            </Button>
+          </div>
         </div>
 
         {/* Summary Row */}
