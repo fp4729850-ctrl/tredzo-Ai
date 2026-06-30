@@ -75,7 +75,8 @@ async function calcQty(base: string, prefix: string, sym: string, price: number,
   try {
     const res = await fetch(`${base}${prefix}/exchangeInfo?symbol=${sym.toUpperCase()}`);
     const data = await res.json();
-    const filters = data?.symbols?.[0]?.filters ?? [];
+    const symbolData = data?.symbols?.find((s: any) => s.symbol === sym.toUpperCase());
+    const filters = symbolData?.filters ?? [];
     const lot = filters.find((f: { filterType: string }) => f.filterType === 'LOT_SIZE');
     const step: string = lot?.stepSize ?? '1';
     const decimals = step.includes('.') ? step.split('.')[1].replace(/0+$/, '').length : 0;
