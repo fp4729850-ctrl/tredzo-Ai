@@ -334,9 +334,14 @@ async function executeAutoTrade(
     if (qty <= 0) return { success: false, msg: 'Qty too small' };
 
     // Place market order
-    const order = await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
-      symbol, side, type: 'MARKET', quantity: String(qty),
-    });
+    let order;
+    try {
+      order = await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
+        symbol, side, type: 'MARKET', quantity: String(qty),
+      });
+    } catch (e) {
+      return { success: false, msg: `Market Order Error: ${(e as Error).message}` };
+    }
 
     // Place SL order (futures only)
     if (isFutures && item.dynamic_sl) {
