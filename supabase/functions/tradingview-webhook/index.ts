@@ -82,7 +82,7 @@ serve(async (req) => {
     // 1. Fetch user by token
     const { data: settingsList, error: settingsErr } = await client
       .from('user_settings')
-      .select('*, strategies(*)')
+      .select('*')
       .eq('webhook_token', token)
       .limit(1);
 
@@ -113,10 +113,6 @@ serve(async (req) => {
     
     // Find active strategy to tie trade to (or default)
     let strategyId = payload.strategyId;
-    if (!strategyId && settings.strategies && settings.strategies.length > 0) {
-      const activeStrategy = settings.strategies.find((s: any) => s.status === 'active');
-      if (activeStrategy) strategyId = activeStrategy.id;
-    }
 
     const qty = await calcQtyForSymbol(base, prefix, symbol, price, effectiveSize, null);
     
