@@ -19,6 +19,20 @@ async function hmacSha256(secret: string, msg: string): Promise<string> {
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+async function signedGet(base: string, path: string, apiKey: string, secret: string, params: Record<string, string> = {}) {
+  const ts = Date.now().toString();
+  const all = { ...params, recvWindow: RECV_WINDOW, timestamp: ts };
+  const qs = new URLSearchParams(all).toString();
+  const sig = await hmacSha256(secret, qs);
+  const res = await fetch(`${base}${path}?${qs}&signature=${sig}`, {
+    method: 'GET',
+    headers: { 'X-MBX-APIKEY': apiKey },
+  });
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.msg || `HTTP ${res.status}`);
+  return j;
+}
+
 async function signedPost(base: string, path: string, apiKey: string, secret: string, params: Record<string, string>) {
   const ts = Date.now().toString();
   const all = { ...params, recvWindow: RECV_WINDOW, timestamp: ts };
@@ -49,6 +63,24 @@ async function calcQtyForSymbol(base: string, prefix: string, sym: string, price
     if (price > 1000) return +rawQty.toFixed(5);
     if (price > 1) return +rawQty.toFixed(3);
     return Math.floor(rawQty);
+  }
+}
+
+// Check if user has an open position on Binance Futures for a given symbol
+async function getOpenPosition(base: string, apiKey: string, secret: string, symbol: string): Promise<{ side: string; qty: number } | null> {
+  try {
+    const positions = await signedGet(base, '/fapi/v2/positionRisk', apiKey, secret, { symbol });
+    if (!Array.isArray(positions)) return null;
+    for (const pos of positions) {
+      const amt = parseFloat(pos.positionAmt ?? '0');
+      if (amt !== 0) {
+        return { side: amt > 0 ? 'LONG' : 'SHORT', qty: Math.abs(amt) };
+      }
+    }
+    return null;
+  } catch (e) {
+    console.error(`[webhook] Failed to check open position: ${(e as Error).message}`);
+    return null;
   }
 }
 
@@ -93,12 +125,6 @@ serve(async (req) => {
     const action = payload.action?.toUpperCase();
     const symbol = payload.symbol?.toUpperCase();
     const priceStr = payload.price;
-    const position = payload.position?.toLowerCase();
-    const prevPosition = payload.prev_position?.toLowerCase();
-
-    // Check if this is an exit (partial or full)
-    const isExit = (prevPosition === 'long' && action === 'SELL' && (position === 'flat' || position === 'long')) ||
-                   (prevPosition === 'short' && action === 'BUY' && (position === 'flat' || position === 'short'));
 
     if (!action || !symbol || !priceStr) {
       return new Response(JSON.stringify({ error: 'Invalid payload. Ensure action, symbol, and price are provided.' }), { status: 400, headers: corsHeaders });
@@ -144,23 +170,49 @@ serve(async (req) => {
     // Find active strategy to tie trade to (or default)
     let strategyId = payload.strategyId;
 
+    // ── SMART ENTRY-ONLY LOGIC ──
+    // For Futures: Check if user already has an open position on this symbol.
+    // If yes → SKIP this signal (Binance SL/TP will handle exits).
+    // If no  → Open new entry + place SL/TP orders on Binance.
+    if (tradingMode === 'futures') {
+      const existingPos = await getOpenPosition(base, settings.binance_api_key, settings.binance_api_secret, symbol);
+      
+      if (existingPos) {
+        console.log(`[webhook] SKIPPED: ${symbol} already has open ${existingPos.side} position (qty: ${existingPos.qty}). Binance SL/TP will handle exit.`);
+        
+        // Log signal as skipped
+        await client.from('signals').insert({
+          user_id: settings.user_id, strategy_id: strategyId || null, symbol: symbol,
+          direction: side.toLowerCase(),
+          confidence: 99, entry_price: price,
+          stop_loss: 0, take_profit: 0,
+          timeframe: 'Webhook', 
+          reason: `Skipped: Already has ${existingPos.side} position (qty: ${existingPos.qty}). Binance SL/TP handles exit.`, 
+          status: 'cancelled',
+        });
+
+        return new Response(JSON.stringify({ 
+          success: true, 
+          message: `Skipped: ${symbol} already has open ${existingPos.side} position. Binance SL/TP will handle exit.`,
+          existing_position: existingPos,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // ── NEW ENTRY: Place trade ──
     const fixedUsdt = payload.fixedUsdt ?? settings.trade_amount_usdt ?? null;
     const directQty = payload.qty ? parseFloat(String(payload.qty)) : null;
     const qty = await calcQtyForSymbol(base, prefix, symbol, price, effectiveSize, fixedUsdt, directQty);
     
     let order: Record<string, unknown> | null = null;
-    let reason = 'Webhook triggered' + (isExit ? ' (Exit)' : '');
+    let reason = 'Webhook triggered (New Entry)';
 
-    // 2. Place entry order
     try {
-      const orderPayload: any = {
+      order = await signedPost(base, `${prefix}/order`, settings.binance_api_key, settings.binance_api_secret, {
         symbol: symbol, side, type: 'MARKET', quantity: String(qty),
-      };
-      if (isExit && tradingMode === 'futures') {
-        orderPayload.reduceOnly = 'true';
-      }
-      
-      order = await signedPost(base, `${prefix}/order`, settings.binance_api_key, settings.binance_api_secret, orderPayload);
+      });
     } catch (e) {
       const errMsg = (e as Error).message;
       console.error(`[webhook] Order failed for ${symbol}: ${errMsg}`);
@@ -170,25 +222,39 @@ serve(async (req) => {
     const effectiveSL = settings.stop_loss_pct ?? 2.0;
     const effectiveTP = settings.take_profit_pct ?? 4.0;
 
-    // 3. Place SL and TP for futures (only for entries)
-    if (!isExit && order && tradingMode === 'futures') {
+    // ── Place SL and TP for futures (entry only) ──
+    if (order && tradingMode === 'futures') {
+      // First cancel any existing open orders on this symbol (cleanup)
+      try {
+        await signedPost(base, `${prefix}/allOpenOrders`, settings.binance_api_key, settings.binance_api_secret, {
+          symbol: symbol,
+        });
+        console.log(`[webhook] Cleared old open orders for ${symbol}`);
+      } catch (e) {
+        console.error(`[webhook] Clear old orders failed: ${(e as Error).message}`);
+      }
+
       const slPrice = +(price * (side === 'BUY' ? (1 - effectiveSL / 100) : (1 + effectiveSL / 100))).toFixed(4);
       const tpPrice = +(price * (side === 'BUY' ? (1 + effectiveTP / 100) : (1 - effectiveTP / 100))).toFixed(4);
 
+      // Place Stop Loss
       try {
         await signedPost(base, `${prefix}/order`, settings.binance_api_key, settings.binance_api_secret, {
           symbol: symbol, side: closeSide, type: 'STOP_MARKET',
           stopPrice: String(slPrice), closePosition: 'true',
         });
+        console.log(`[webhook] SL placed at ${slPrice} for ${symbol}`);
       } catch (e) {
         console.error(`[webhook] SL order failed: ${(e as Error).message}`);
       }
 
+      // Place Take Profit
       try {
         await signedPost(base, `${prefix}/order`, settings.binance_api_key, settings.binance_api_secret, {
           symbol: symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
           stopPrice: String(tpPrice), closePosition: 'true',
         });
+        console.log(`[webhook] TP placed at ${tpPrice} for ${symbol}`);
       } catch (e) {
         console.error(`[webhook] TP order failed: ${(e as Error).message}`);
       }
@@ -218,7 +284,7 @@ serve(async (req) => {
       timeframe: 'Webhook', reason: reason, status: order ? 'executed' : 'cancelled',
     });
 
-    return new Response(JSON.stringify({ success: true, message: 'Webhook processed', order }), {
+    return new Response(JSON.stringify({ success: true, message: 'Webhook processed (New Entry)', order }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
