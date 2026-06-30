@@ -40,9 +40,11 @@ interface UserSettings {
   binance_api_key?: string | null;
   binance_api_secret?: string | null;
   trading_mode?: 'spot' | 'futures';
+  use_testnet?: boolean;
   testnet_mode?: boolean;
   position_size_pct?: number;
   trade_amount_usdt?: number;
+  trailing_sl_percent?: number;
 }
 
 // ─── Binance Signing ──────────────────────────────────────────────────────────
@@ -305,7 +307,7 @@ async function executeAutoTrade(
 
     // Market Scanner is strictly a Futures bot (needs SL/TP closePosition='true')
     const isFutures = true;
-    const isTestnet = settings.testnet_mode ?? false;
+    const isTestnet = settings.use_testnet ?? settings.testnet_mode ?? false;
     const base   = isFutures
       ? (isTestnet ? 'https://testnet.binancefuture.com' : BINANCE_FUTURES_BASE)
       : (isTestnet ? 'https://testnet.binance.vision' : BINANCE_SPOT_BASE);
@@ -543,9 +545,9 @@ Deno.serve(async (req) => {
           // Fetch user settings
           const { data: settings } = await sbAdmin
             .from('user_settings')
-            .select('binance_api_key, binance_api_secret, trading_mode, testnet_mode, position_size_pct, trade_amount_usdt')
+            .select('binance_api_key, binance_api_secret, trading_mode, use_testnet, testnet_mode, position_size_pct, trade_amount_usdt, trailing_sl_percent')
             .eq('user_id', user.id)
-            .single() as { data: UserSettings | null };
+            .maybeSingle() as { data: UserSettings | null };
 
           if (settings?.binance_api_key) {
             // Override trade amount if provided by the client request
