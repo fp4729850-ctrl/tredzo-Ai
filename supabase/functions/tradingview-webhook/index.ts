@@ -94,6 +94,14 @@ serve(async (req) => {
     const action = payload.action?.toUpperCase();
     const symbol = payload.symbol?.toUpperCase();
     const priceStr = payload.price;
+    const position = payload.position?.toLowerCase();
+
+    if (position === 'flat') {
+      console.log(`[webhook] Ignored exit signal for ${symbol} because Binance SL/TP handles exits automatically.`);
+      return new Response(JSON.stringify({ success: true, message: 'Exit signal ignored. Binance SL/TP handles exits automatically.' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     if (!action || !symbol || !priceStr) {
       return new Response(JSON.stringify({ error: 'Invalid payload. Ensure action, symbol, and price are provided.' }), { status: 400, headers: corsHeaders });
