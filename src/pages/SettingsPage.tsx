@@ -104,13 +104,17 @@ export default function SettingsPage() {
 
     try {
       // Fetch current price to calculate quantity from USDT amount
-      const base = settings.use_testnet ? 'https://testnet.binance.vision' : 'https://api.binance.com';
+      const isFutures = settings.trading_mode === 'futures';
+      const base = settings.use_testnet 
+        ? (isFutures ? 'https://testnet.binancefuture.com' : 'https://testnet.binance.vision')
+        : (isFutures ? 'https://fapi.binance.com' : 'https://api.binance.com');
+      const prefix = isFutures ? '/fapi/v1' : '/api/v3';
       const sym = manualSymbol.toUpperCase();
 
       // Fetch price + exchange info in parallel
       const [priceRes, infoRes] = await Promise.all([
-        fetch(`${base}/api/v3/ticker/price?symbol=${sym}`),
-        fetch(`${base}/api/v3/exchangeInfo?symbol=${sym}`),
+        fetch(`${base}${prefix}/ticker/price?symbol=${sym}`),
+        fetch(`${base}${prefix}/exchangeInfo${isFutures ? '' : `?symbol=${sym}`}`),
       ]);
       const priceData = await priceRes.json();
       const infoData = await infoRes.json();
@@ -119,7 +123,8 @@ export default function SettingsPage() {
       if (!price || price <= 0) throw new Error('Could not fetch price');
 
       // Get LOT_SIZE stepSize to determine correct decimal precision
-      const filters = infoData?.symbols?.[0]?.filters ?? [];
+      const symbolData = infoData?.symbols?.find((s: any) => s.symbol === sym);
+      const filters = symbolData?.filters ?? [];
       const lotFilter = filters.find((f: {filterType: string}) => f.filterType === 'LOT_SIZE');
       const stepSize: string = lotFilter?.stepSize ?? '1';
       const decimals = stepSize.includes('.') ? stepSize.split('.')[1].replace(/0+$/, '').length : 0;
