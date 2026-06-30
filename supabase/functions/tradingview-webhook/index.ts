@@ -65,6 +65,32 @@ serve(async (req) => {
     }
 
     const payload = await req.json();
+
+    const client = sb();
+
+    // If request comes from TradingView (US IP), Binance blocks it for REAL accounts.
+    // We bypass this by forwarding the payload to the Postgres DB via an RPC,
+    // which then calls this webhook back using pg_net (originating from DB's non-US region).
+    if (!payload.is_proxied) {
+      console.log(`[webhook] Proxying request via DB to bypass US IP restrictions...`);
+      const proxyPayload = { ...payload, is_proxied: true };
+      
+      const { error } = await client.rpc('proxy_webhook', { 
+        payload: proxyPayload, 
+        token: token 
+      });
+
+      if (error) {
+        console.error(`[webhook] Proxy RPC failed:`, error);
+        return new Response(JSON.stringify({ error: 'Proxy failed', details: error }), { status: 500, headers: corsHeaders });
+      }
+
+      // Return immediate success to TradingView
+      return new Response(JSON.stringify({ success: true, message: 'Webhook received and proxied' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const action = payload.action?.toUpperCase();
     const symbol = payload.symbol?.toUpperCase();
     const priceStr = payload.price;
@@ -77,8 +103,6 @@ serve(async (req) => {
     if (isNaN(price)) {
       return new Response(JSON.stringify({ error: 'Invalid price' }), { status: 400, headers: corsHeaders });
     }
-
-    const client = sb();
 
     // 1. Fetch user by token
     const { data: settingsList, error: settingsErr } = await client
