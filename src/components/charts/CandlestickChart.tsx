@@ -4,6 +4,7 @@ import {
   ColorType,
   CrosshairMode,
   CandlestickSeries,
+  createSeriesMarkers,
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts';
@@ -127,10 +128,9 @@ export function CandlestickChart({ candles, trades = [], symbol }: CandlestickCh
         });
       }
 
-      // v4 API: setMarkers directly on series (sorted by time required)
+      // v5 API: createSeriesMarkers plugin
       markers.sort((a, b) => (a.time as number) - (b.time as number));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (candleSeries as any).setMarkers(markers);
+      createSeriesMarkers(candleSeries, markers);
     }
 
     chart.timeScale().fitContent();
