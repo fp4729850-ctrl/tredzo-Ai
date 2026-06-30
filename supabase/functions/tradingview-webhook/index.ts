@@ -19,27 +19,13 @@ async function hmacSha256(secret: string, msg: string): Promise<string> {
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function signedGet(base: string, path: string, apiKey: string, secret: string, params: Record<string, string> = {}) {
+async function signedRequest(method: string, base: string, path: string, apiKey: string, secret: string, params: Record<string, string> = {}) {
   const ts = Date.now().toString();
   const all = { ...params, recvWindow: RECV_WINDOW, timestamp: ts };
   const qs = new URLSearchParams(all).toString();
   const sig = await hmacSha256(secret, qs);
   const res = await fetch(`${base}${path}?${qs}&signature=${sig}`, {
-    method: 'GET',
-    headers: { 'X-MBX-APIKEY': apiKey },
-  });
-  const j = await res.json();
-  if (!res.ok) throw new Error(j.msg || `HTTP ${res.status}`);
-  return j;
-}
-
-async function signedPost(base: string, path: string, apiKey: string, secret: string, params: Record<string, string>) {
-  const ts = Date.now().toString();
-  const all = { ...params, recvWindow: RECV_WINDOW, timestamp: ts };
-  const qs = new URLSearchParams(all).toString();
-  const sig = await hmacSha256(secret, qs);
-  const res = await fetch(`${base}${path}?${qs}&signature=${sig}`, {
-    method: 'POST',
+    method,
     headers: { 'X-MBX-APIKEY': apiKey, 'Content-Type': 'application/json' },
   });
   const j = await res.json();
@@ -47,26 +33,33 @@ async function signedPost(base: string, path: string, apiKey: string, secret: st
   return j;
 }
 
-async function calcQtyForSymbol(base: string, prefix: string, sym: string, price: number, pct: number, fixedUsdt: number | null, directQty: number | null): Promise<number> {
-  const rawQty = directQty ? directQty : (fixedUsdt ? fixedUsdt / price : (1000 * (pct / 100)) / price);
+const signedGet = (b: string, p: string, k: string, s: string, params?: Record<string, string>) => signedRequest('GET', b, p, k, s, params);
+const signedPost = (b: string, p: string, k: string, s: string, params: Record<string, string>) => signedRequest('POST', b, p, k, s, params);
+const signedDelete = (b: string, p: string, k: string, s: string, params: Record<string, string>) => signedRequest('DELETE', b, p, k, s, params);
+
+// Get step-size-rounded quantity for a symbol
+async function roundToStepSize(base: string, prefix: string, sym: string, rawQty: number): Promise<number> {
   try {
-    const infoRes = await fetch(`${base}${prefix}/exchangeInfo?symbol=${sym.toUpperCase()}`);
+    const infoRes = await fetch(`${base}${prefix}/exchangeInfo?symbol=${sym}`);
     const infoData = await infoRes.json();
-    const symbolData = infoData?.symbols?.find((s: any) => s.symbol === sym.toUpperCase());
-    const filters = symbolData?.filters ?? [];
-    const lotFilter = filters.find((f: { filterType: string }) => f.filterType === 'LOT_SIZE');
+    const symbolData = infoData?.symbols?.find((s: any) => s.symbol === sym);
+    const lotFilter = (symbolData?.filters ?? []).find((f: any) => f.filterType === 'LOT_SIZE');
     const stepSize: string = lotFilter?.stepSize ?? '1';
     const decimals = stepSize.includes('.') ? stepSize.split('.')[1].replace(/0+$/, '').length : 0;
     const factor = Math.pow(10, decimals);
     return Math.floor(rawQty * factor) / factor;
   } catch {
-    if (price > 1000) return +rawQty.toFixed(5);
-    if (price > 1) return +rawQty.toFixed(3);
-    return Math.floor(rawQty);
+    return rawQty;
   }
 }
 
-// Check if user has an open position on Binance Futures for a given symbol
+// Calculate entry quantity from USDT amount
+async function calcEntryQty(base: string, prefix: string, sym: string, price: number, pct: number, fixedUsdt: number | null): Promise<number> {
+  const rawQty = fixedUsdt ? fixedUsdt / price : (1000 * (pct / 100)) / price;
+  return roundToStepSize(base, prefix, sym, rawQty);
+}
+
+// Check if user has an open position on Binance Futures
 async function getOpenPosition(base: string, apiKey: string, secret: string, symbol: string): Promise<{ side: string; qty: number } | null> {
   try {
     const positions = await signedGet(base, '/fapi/v2/positionRisk', apiKey, secret, { symbol });
@@ -79,7 +72,7 @@ async function getOpenPosition(base: string, apiKey: string, secret: string, sym
     }
     return null;
   } catch (e) {
-    console.error(`[webhook] Failed to check open position: ${(e as Error).message}`);
+    console.error(`[webhook] Failed to check position: ${(e as Error).message}`);
     return null;
   }
 }
@@ -92,70 +85,50 @@ serve(async (req) => {
     const token = url.searchParams.get('token');
     
     if (!token) {
-      return new Response(JSON.stringify({ error: 'Missing token parameter in URL' }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: 'Missing token' }), { status: 400, headers: corsHeaders });
     }
 
     const payload = await req.json();
-
     const client = sb();
 
-    // If request comes from TradingView (US IP), Binance blocks it for REAL accounts.
-    // We bypass this by forwarding the payload to the Postgres DB via an RPC,
-    // which then calls this webhook back using pg_net (originating from DB's non-US region).
+    // ── PROXY: Bypass US IP restriction ──
     if (!payload.is_proxied) {
-      console.log(`[webhook] Proxying request via DB to bypass US IP restrictions...`);
-      const proxyPayload = { ...payload, is_proxied: true };
-      
-      const { error } = await client.rpc('proxy_webhook', { 
-        payload: proxyPayload, 
-        token: token 
-      });
-
+      console.log(`[webhook] Proxying via DB...`);
+      const { error } = await client.rpc('proxy_webhook', { payload: { ...payload, is_proxied: true }, token });
       if (error) {
-        console.error(`[webhook] Proxy RPC failed:`, error);
+        console.error(`[webhook] Proxy failed:`, error);
         return new Response(JSON.stringify({ error: 'Proxy failed', details: error }), { status: 500, headers: corsHeaders });
       }
-
-      // Return immediate success to TradingView
-      return new Response(JSON.stringify({ success: true, message: 'Webhook received and proxied' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return new Response(JSON.stringify({ success: true, message: 'Proxied' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // ── PARSE PAYLOAD ──
     const action = payload.action?.toUpperCase();
     const symbol = payload.symbol?.toUpperCase();
-    const priceStr = payload.price;
+    const price = parseFloat(String(payload.price ?? '0'));
+    const tradeType = payload.type?.toLowerCase(); // "entry", "tp", "sl", or undefined
 
-    if (!action || !symbol || !priceStr) {
-      return new Response(JSON.stringify({ error: 'Invalid payload. Ensure action, symbol, and price are provided.' }), { status: 400, headers: corsHeaders });
+    if (!symbol) {
+      return new Response(JSON.stringify({ error: 'Missing symbol' }), { status: 400, headers: corsHeaders });
     }
 
-    const price = parseFloat(String(priceStr));
-    if (isNaN(price)) {
-      return new Response(JSON.stringify({ error: 'Invalid price' }), { status: 400, headers: corsHeaders });
-    }
-
-    // 1. Fetch user by token
+    // ── FETCH USER SETTINGS ──
     const { data: settingsList, error: settingsErr } = await client
-      .from('user_settings')
-      .select('*')
-      .eq('webhook_token', token)
-      .limit(1);
-
+      .from('user_settings').select('*').eq('webhook_token', token).limit(1);
     const settings = settingsList?.[0];
 
     if (settingsErr || !settings) {
       return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: corsHeaders });
     }
-
     if (!settings.binance_api_key || !settings.binance_api_secret) {
-      return new Response(JSON.stringify({ error: 'Binance API keys not configured' }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: 'API keys not configured' }), { status: 400, headers: corsHeaders });
     }
-
     if (settings.bot_enabled === false) {
-      return new Response(JSON.stringify({ message: 'Bot is disabled by user' }), { status: 200, headers: corsHeaders });
+      return new Response(JSON.stringify({ message: 'Bot disabled' }), { status: 200, headers: corsHeaders });
     }
 
+    const apiKey = settings.binance_api_key;
+    const apiSecret = settings.binance_api_secret;
     const useTestnet = settings.use_testnet ?? true;
     const tradingMode = settings.trading_mode === 'futures' ? 'futures' : 'spot';
     const base = useTestnet
@@ -163,134 +136,202 @@ serve(async (req) => {
       : (tradingMode === 'futures' ? 'https://fapi.binance.com' : 'https://api.binance.com');
     const prefix = tradingMode === 'futures' ? '/fapi/v1' : '/api/v3';
 
+    let order: Record<string, unknown> | null = null;
+    let reason = '';
+    let logDirection = action === 'BUY' ? 'long' : 'short';
+
+    // ══════════════════════════════════════════════
+    //  EXIT LOGIC: type = "tp" (partial) or "sl" (full)
+    // ══════════════════════════════════════════════
+    if (tradeType === 'tp' || tradeType === 'sl') {
+      
+      if (tradingMode !== 'futures') {
+        return new Response(JSON.stringify({ error: 'TP/SL exits only supported for futures' }), { status: 400, headers: corsHeaders });
+      }
+
+      const existingPos = await getOpenPosition(base, apiKey, apiSecret, symbol);
+      
+      if (!existingPos) {
+        console.log(`[webhook] ${tradeType.toUpperCase()} for ${symbol}: No open position, skipping.`);
+        return new Response(JSON.stringify({ success: true, message: `No open position for ${symbol}` }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const closeSide = existingPos.side === 'LONG' ? 'SELL' : 'BUY';
+      logDirection = existingPos.side === 'LONG' ? 'long' : 'short';
+      let closeQty = existingPos.qty;
+
+      if (tradeType === 'tp') {
+        const exitPct = Math.min(payload.exitPct ?? 100, 100);
+        if (exitPct < 100) {
+          closeQty = await roundToStepSize(base, prefix, symbol, existingPos.qty * exitPct / 100);
+        }
+        reason = `TP Exit: ${exitPct}% (${closeQty} of ${existingPos.qty})`;
+      } else {
+        reason = `SL Exit: Full close (${closeQty})`;
+      }
+
+      if (closeQty <= 0) {
+        console.log(`[webhook] ${symbol}: closeQty is 0, skipping.`);
+        return new Response(JSON.stringify({ success: true, message: 'Qty too small' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Cancel any existing open orders (cleanup old Binance SL/TP if any)
+      if (tradeType === 'sl') {
+        try {
+          await signedDelete(base, `${prefix}/allOpenOrders`, apiKey, apiSecret, { symbol });
+          console.log(`[webhook] Cancelled open orders for ${symbol}`);
+        } catch (e) {
+          console.error(`[webhook] Cancel orders failed: ${(e as Error).message}`);
+        }
+      }
+
+      // Place reduceOnly MARKET order
+      try {
+        order = await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
+          symbol, side: closeSide, type: 'MARKET',
+          quantity: String(closeQty), reduceOnly: 'true',
+        });
+        console.log(`[webhook] ${tradeType.toUpperCase()} exit success: ${symbol} ${closeSide} ${closeQty}`);
+      } catch (e) {
+        const errMsg = (e as Error).message;
+        console.error(`[webhook] ${tradeType.toUpperCase()} exit failed: ${errMsg}`);
+        reason += ` | Failed: ${errMsg}`;
+      }
+
+      // Log signal
+      await client.from('signals').insert({
+        user_id: settings.user_id, strategy_id: payload.strategyId || null, symbol,
+        direction: logDirection, confidence: 99, entry_price: price || 0,
+        stop_loss: 0, take_profit: 0,
+        timeframe: 'Webhook', reason, status: order ? 'executed' : 'cancelled',
+      });
+
+      // Update trade status if full exit
+      if (order && (tradeType === 'sl' || (payload.exitPct ?? 100) >= 100)) {
+        await client.from('trades')
+          .update({ status: 'closed', closed_at: new Date().toISOString() })
+          .eq('user_id', settings.user_id)
+          .eq('symbol', symbol)
+          .eq('status', 'open');
+      }
+
+      return new Response(JSON.stringify({ success: true, message: reason, order }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ══════════════════════════════════════════════
+    //  ENTRY LOGIC: type = "entry" or no type (legacy)
+    // ══════════════════════════════════════════════
+    if (!action) {
+      return new Response(JSON.stringify({ error: 'Missing action' }), { status: 400, headers: corsHeaders });
+    }
+    if (isNaN(price) || price <= 0) {
+      return new Response(JSON.stringify({ error: 'Invalid price' }), { status: 400, headers: corsHeaders });
+    }
+
     const side = action === 'BUY' ? 'BUY' : 'SELL';
     const closeSide = side === 'BUY' ? 'SELL' : 'BUY';
-    const effectiveSize = settings.position_size_pct ?? 5.0;
-    
-    // Find active strategy to tie trade to (or default)
-    let strategyId = payload.strategyId;
+    logDirection = side === 'BUY' ? 'long' : 'short';
 
-    // ── SMART ENTRY-ONLY LOGIC ──
-    // For Futures: Check if user already has an open position on this symbol.
-    // If yes → SKIP this signal (Binance SL/TP will handle exits).
-    // If no  → Open new entry + place SL/TP orders on Binance.
+    // Check existing position (skip if already in a trade)
     if (tradingMode === 'futures') {
-      const existingPos = await getOpenPosition(base, settings.binance_api_key, settings.binance_api_secret, symbol);
-      
+      const existingPos = await getOpenPosition(base, apiKey, apiSecret, symbol);
       if (existingPos) {
-        console.log(`[webhook] SKIPPED: ${symbol} already has open ${existingPos.side} position (qty: ${existingPos.qty}). Binance SL/TP will handle exit.`);
-        
-        // Log signal as skipped
+        console.log(`[webhook] SKIP entry: ${symbol} already has ${existingPos.side} position (${existingPos.qty})`);
         await client.from('signals').insert({
-          user_id: settings.user_id, strategy_id: strategyId || null, symbol: symbol,
-          direction: side.toLowerCase(),
-          confidence: 99, entry_price: price,
-          stop_loss: 0, take_profit: 0,
-          timeframe: 'Webhook', 
-          reason: `Skipped: Already has ${existingPos.side} position (qty: ${existingPos.qty}). Binance SL/TP handles exit.`, 
-          status: 'cancelled',
+          user_id: settings.user_id, strategy_id: payload.strategyId || null, symbol,
+          direction: logDirection, confidence: 99, entry_price: price,
+          stop_loss: 0, take_profit: 0, timeframe: 'Webhook',
+          reason: `Skipped: Already ${existingPos.side} (${existingPos.qty})`, status: 'cancelled',
         });
-
-        return new Response(JSON.stringify({ 
-          success: true, 
-          message: `Skipped: ${symbol} already has open ${existingPos.side} position. Binance SL/TP will handle exit.`,
-          existing_position: existingPos,
-        }), {
+        return new Response(JSON.stringify({ success: true, message: `Skipped: existing ${existingPos.side} position` }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
     }
 
-    // ── NEW ENTRY: Place trade ──
-    const fixedUsdt = payload.fixedUsdt ?? settings.trade_amount_usdt ?? null;
-    const directQty = payload.qty ? parseFloat(String(payload.qty)) : null;
-    const qty = await calcQtyForSymbol(base, prefix, symbol, price, effectiveSize, fixedUsdt, directQty);
-    
-    let order: Record<string, unknown> | null = null;
-    let reason = 'Webhook triggered (New Entry)';
+    // Calculate entry quantity
+    const fixedUsdt = payload.fixedUsdt ?? null;
+    const effectiveSize = settings.position_size_pct ?? 5.0;
+    const qty = await calcEntryQty(base, prefix, symbol, price, effectiveSize, fixedUsdt);
+    reason = `Entry: ${side} ${qty} ${symbol} @ ${price}`;
 
+    // Place entry order
     try {
-      order = await signedPost(base, `${prefix}/order`, settings.binance_api_key, settings.binance_api_secret, {
-        symbol: symbol, side, type: 'MARKET', quantity: String(qty),
+      order = await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
+        symbol, side, type: 'MARKET', quantity: String(qty),
       });
+      console.log(`[webhook] Entry success: ${symbol} ${side} ${qty}`);
     } catch (e) {
       const errMsg = (e as Error).message;
-      console.error(`[webhook] Order failed for ${symbol}: ${errMsg}`);
-      reason += ` | Order Failed: ${errMsg}`;
+      console.error(`[webhook] Entry failed: ${errMsg}`);
+      reason += ` | Failed: ${errMsg}`;
     }
 
+    // ── Place Binance SL/TP ONLY for legacy mode (no type field) ──
+    // When type="entry", PineScript handles exits via TP/SL alerts.
+    // When no type, use app settings for Binance SL/TP.
     const effectiveSL = settings.stop_loss_pct ?? 2.0;
     const effectiveTP = settings.take_profit_pct ?? 4.0;
 
-    // ── Place SL and TP for futures (entry only) ──
-    if (order && tradingMode === 'futures') {
-      // First cancel any existing open orders on this symbol (cleanup)
-      try {
-        await signedPost(base, `${prefix}/allOpenOrders`, settings.binance_api_key, settings.binance_api_secret, {
-          symbol: symbol,
-        });
-        console.log(`[webhook] Cleared old open orders for ${symbol}`);
-      } catch (e) {
-        console.error(`[webhook] Clear old orders failed: ${(e as Error).message}`);
-      }
-
+    if (!tradeType && order && tradingMode === 'futures') {
       const slPrice = +(price * (side === 'BUY' ? (1 - effectiveSL / 100) : (1 + effectiveSL / 100))).toFixed(4);
       const tpPrice = +(price * (side === 'BUY' ? (1 + effectiveTP / 100) : (1 - effectiveTP / 100))).toFixed(4);
 
-      // Place Stop Loss
       try {
-        await signedPost(base, `${prefix}/order`, settings.binance_api_key, settings.binance_api_secret, {
-          symbol: symbol, side: closeSide, type: 'STOP_MARKET',
+        await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
+          symbol, side: closeSide, type: 'STOP_MARKET',
           stopPrice: String(slPrice), closePosition: 'true',
         });
-        console.log(`[webhook] SL placed at ${slPrice} for ${symbol}`);
+        console.log(`[webhook] SL placed at ${slPrice}`);
       } catch (e) {
-        console.error(`[webhook] SL order failed: ${(e as Error).message}`);
+        console.error(`[webhook] SL failed: ${(e as Error).message}`);
       }
 
-      // Place Take Profit
       try {
-        await signedPost(base, `${prefix}/order`, settings.binance_api_key, settings.binance_api_secret, {
-          symbol: symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
+        await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
+          symbol, side: closeSide, type: 'TAKE_PROFIT_MARKET',
           stopPrice: String(tpPrice), closePosition: 'true',
         });
-        console.log(`[webhook] TP placed at ${tpPrice} for ${symbol}`);
+        console.log(`[webhook] TP placed at ${tpPrice}`);
       } catch (e) {
-        console.error(`[webhook] TP order failed: ${(e as Error).message}`);
+        console.error(`[webhook] TP failed: ${(e as Error).message}`);
       }
     }
 
-    const ts = new Date().toISOString();
-
-    // 4. Log trade
+    // Log trade
     if (order) {
       await client.from('trades').insert({
-        user_id: settings.user_id, signal_id: null, symbol: symbol,
-        direction: side.toLowerCase(),
-        entry_price: price, quantity: qty,
+        user_id: settings.user_id, signal_id: null, symbol,
+        direction: logDirection, entry_price: price, quantity: qty,
         stop_loss: price * (1 - effectiveSL / 100),
         take_profit: price * (1 + effectiveTP / 100),
-        status: 'open', binance_order_id: String(order.orderId ?? ''), opened_at: ts,
+        status: 'open', binance_order_id: String(order.orderId ?? ''),
+        opened_at: new Date().toISOString(),
       });
     }
 
-    // 5. Log signal
+    // Log signal
     await client.from('signals').insert({
-      user_id: settings.user_id, strategy_id: strategyId || null, symbol: symbol,
-      direction: side.toLowerCase(),
-      confidence: 99, entry_price: price,
+      user_id: settings.user_id, strategy_id: payload.strategyId || null, symbol,
+      direction: logDirection, confidence: 99, entry_price: price,
       stop_loss: price * (1 - effectiveSL / 100),
       take_profit: price * (1 + effectiveTP / 100),
-      timeframe: 'Webhook', reason: reason, status: order ? 'executed' : 'cancelled',
+      timeframe: 'Webhook', reason, status: order ? 'executed' : 'cancelled',
     });
 
-    return new Response(JSON.stringify({ success: true, message: 'Webhook processed (New Entry)', order }), {
+    return new Response(JSON.stringify({ success: true, message: reason, order }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
+    console.error(`[webhook] Unhandled error:`, err);
     return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
