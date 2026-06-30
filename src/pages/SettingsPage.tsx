@@ -8,11 +8,12 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Eye, EyeOff, Save, Loader2, Key, Shield, Bot, AlertTriangle, Flame, Bell, MessageCircle, Send } from 'lucide-react';
+import { Eye, EyeOff, Save, Loader2, Key, Shield, Bot, AlertTriangle, Flame, Bell, MessageCircle, Send, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { getUserSettings, upsertUserSettings, callBinanceTrade } from '@/services/api';
 import type { UserSettings } from '@/types/types';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/db/supabase';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Partial<UserSettings>>({
@@ -83,6 +84,11 @@ export default function SettingsPage() {
         { icon: '✅' }
       );
     }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    window.location.reload();
   };
 
   const handleManualTrade = async (side: 'BUY' | 'SELL') => {
@@ -652,7 +658,11 @@ export default function SettingsPage() {
         </Card>
 
         {/* Save Button */}
-        <div className="flex justify-end">
+        <div className="flex justify-between items-center mt-8 pt-6 border-t border-border">
+          <Button onClick={handleSignOut} variant="destructive" className="h-10 gap-2 px-6">
+            <LogOut className="h-4 w-4" />
+            Sign Out
+          </Button>
           <Button onClick={handleSave} disabled={saving} className="h-10 gap-2 px-6">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save All Settings
