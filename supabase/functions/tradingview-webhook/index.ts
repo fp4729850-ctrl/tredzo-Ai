@@ -33,9 +33,8 @@ async function signedPost(base: string, path: string, apiKey: string, secret: st
   return j;
 }
 
-async function calcQtyForSymbol(base: string, prefix: string, sym: string, price: number, pct: number, fixedUsdt: number | null): Promise<number> {
-  const budget = fixedUsdt ? fixedUsdt : 1000 * (pct / 100);
-  const rawQty = budget / price;
+async function calcQtyForSymbol(base: string, prefix: string, sym: string, price: number, pct: number, fixedUsdt: number | null, directQty: number | null): Promise<number> {
+  const rawQty = directQty ? directQty : (fixedUsdt ? fixedUsdt / price : (1000 * (pct / 100)) / price);
   try {
     const infoRes = await fetch(`${base}${prefix}/exchangeInfo?symbol=${sym.toUpperCase()}`);
     const infoData = await infoRes.json();
@@ -95,13 +94,11 @@ serve(async (req) => {
     const symbol = payload.symbol?.toUpperCase();
     const priceStr = payload.price;
     const position = payload.position?.toLowerCase();
+    const prevPosition = payload.prev_position?.toLowerCase();
 
-    if (position === 'flat') {
-      console.log(`[webhook] Ignored exit signal for ${symbol} because Binance SL/TP handles exits automatically.`);
-      return new Response(JSON.stringify({ success: true, message: 'Exit signal ignored. Binance SL/TP handles exits automatically.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    // Check if this is an exit (partial or full)
+    const isExit = (prevPosition === 'long' && action === 'SELL' && (position === 'flat' || position === 'long')) ||
+                   (prevPosition === 'short' && action === 'BUY' && (position === 'flat' || position === 'short'));
 
     if (!action || !symbol || !priceStr) {
       return new Response(JSON.stringify({ error: 'Invalid payload. Ensure action, symbol, and price are provided.' }), { status: 400, headers: corsHeaders });
@@ -148,16 +145,22 @@ serve(async (req) => {
     let strategyId = payload.strategyId;
 
     const fixedUsdt = payload.fixedUsdt ?? settings.trade_amount_usdt ?? null;
-    const qty = await calcQtyForSymbol(base, prefix, symbol, price, effectiveSize, fixedUsdt);
+    const directQty = payload.qty ? parseFloat(String(payload.qty)) : null;
+    const qty = await calcQtyForSymbol(base, prefix, symbol, price, effectiveSize, fixedUsdt, directQty);
     
     let order: Record<string, unknown> | null = null;
-    let reason = 'Webhook triggered';
+    let reason = 'Webhook triggered' + (isExit ? ' (Exit)' : '');
 
     // 2. Place entry order
     try {
-      order = await signedPost(base, `${prefix}/order`, settings.binance_api_key, settings.binance_api_secret, {
+      const orderPayload: any = {
         symbol: symbol, side, type: 'MARKET', quantity: String(qty),
-      });
+      };
+      if (isExit && tradingMode === 'futures') {
+        orderPayload.reduceOnly = 'true';
+      }
+      
+      order = await signedPost(base, `${prefix}/order`, settings.binance_api_key, settings.binance_api_secret, orderPayload);
     } catch (e) {
       const errMsg = (e as Error).message;
       console.error(`[webhook] Order failed for ${symbol}: ${errMsg}`);
@@ -167,8 +170,8 @@ serve(async (req) => {
     const effectiveSL = settings.stop_loss_pct ?? 2.0;
     const effectiveTP = settings.take_profit_pct ?? 4.0;
 
-    // 3. Place SL and TP for futures
-    if (order && tradingMode === 'futures') {
+    // 3. Place SL and TP for futures (only for entries)
+    if (!isExit && order && tradingMode === 'futures') {
       const slPrice = +(price * (side === 'BUY' ? (1 - effectiveSL / 100) : (1 + effectiveSL / 100))).toFixed(4);
       const tpPrice = +(price * (side === 'BUY' ? (1 + effectiveTP / 100) : (1 - effectiveTP / 100))).toFixed(4);
 
