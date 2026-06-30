@@ -80,11 +80,13 @@ serve(async (req) => {
     const client = sb();
 
     // 1. Fetch user by token
-    const { data: settings, error: settingsErr } = await client
+    const { data: settingsList, error: settingsErr } = await client
       .from('user_settings')
       .select('*, strategies(*)')
       .eq('webhook_token', token)
-      .maybeSingle();
+      .limit(1);
+
+    const settings = settingsList?.[0];
 
     if (settingsErr || !settings) {
       return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: corsHeaders });
