@@ -609,7 +609,7 @@ export default function MarketScanPage() {
                           </Badge>
                         </td>
                         <td className="px-3 py-2.5 text-sm font-mono text-foreground">
-                          ${formatPrice(Number(sig.price))}
+                          ${formatPrice(Number(sig.entry_price))}
                         </td>
                         <td className="px-3 py-2.5 text-xs text-muted-foreground">
                           {sig.status === 'executed' ? (

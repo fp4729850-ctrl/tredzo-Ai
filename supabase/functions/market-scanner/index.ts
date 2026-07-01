@@ -661,13 +661,17 @@ Deno.serve(async (req) => {
         for (const signal of signals) {
           try {
             await sbAdmin.from('signals').insert({
-              user_id:    user.id,
-              symbol:     signal.symbol.toUpperCase(),
-              direction:  signal.signal_direction,
-              price:      signal.price,
-              status:     autoTrade && settings?.binance_api_key ? 'executed' : 'pending',
-              reason:     `Tredzo Scanner (Score ${signal.tredzo_score}/100): ${signal.tredzo_reason}`,
-              created_at: new Date().toISOString(),
+              user_id:     user.id,
+              symbol:      signal.symbol.toUpperCase(),
+              direction:   signal.signal_direction,
+              entry_price: signal.price,
+              confidence:  signal.tredzo_score,
+              timeframe:   signal.timeframe,
+              stop_loss:   signal.dynamic_sl ?? null,
+              take_profit: signal.dynamic_tp1 ?? null,
+              status:      autoTrade && settings?.binance_api_key ? 'executed' : 'pending',
+              reason:      `Tredzo Scanner (Score ${signal.tredzo_score}/100): ${signal.tredzo_reason}`,
+              created_at:  new Date().toISOString(),
             });
           } catch (e) {
             console.error('Failed to log signal:', e);
