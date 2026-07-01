@@ -304,7 +304,7 @@ function runTredzoScoring(candles: OHLCV[], scanType: 'gainer' | 'loser'): Tredz
 
 // ─── Gravity Hybrid Scoring ───────────────────────────────────────────────────
 
-function runGravityHybridScoring(candles: OHLCV[], scanType: 'gainer' | 'loser'): TredzoResult {
+function runGravityHybridScoring(candles: OHLCV[], scanType: 'gainer' | 'loser', threshold = 0.5): TredzoResult {
   const HOLD = (r: string): TredzoResult => ({ signal: 'HOLD', score: 0, mandatoryOk: false, reason: r });
   if (candles.length < 50) return HOLD('Not enough data');
 
@@ -357,8 +357,8 @@ function runGravityHybridScoring(candles: OHLCV[], scanType: 'gainer' | 'loser')
     if (!isNaN(lastLowPool) && !isNaN(lastHighPool)) break;
   }
 
-  const bullPropulsion = curr.close > lower && curr.low < lastLowPool && curr.close > lastLowPool && strongVol && g > 0.8;
-  const bearPropulsion = curr.close < upper && curr.high > lastHighPool && curr.close < lastHighPool && strongVol && g < -0.8;
+  const bullPropulsion = curr.close > lower && curr.low < lastLowPool && curr.close > lastLowPool && strongVol && g > threshold;
+  const bearPropulsion = curr.close < upper && curr.high > lastHighPool && curr.close < lastHighPool && strongVol && g < -threshold;
 
   if (bullPropulsion && scanType === 'loser') {
     const sl = Math.min(lastLowPool, curr.low) * 0.998;
@@ -549,6 +549,7 @@ Deno.serve(async (req) => {
     const strategies  = body.strategies ?? { tredzoSMC: true, gravityHybrid: true };
     const useTredzo   = strategies.tredzoSMC !== false;
     const useGravity  = strategies.gravityHybrid !== false;
+    const gravityThreshold = body.gravity_threshold ? Number(body.gravity_threshold) : 0.5;
 
     // 1. Fetch all USDT tickers from Binance Futures
     let tickers: BinanceTicker[] = [];
@@ -597,7 +598,7 @@ Deno.serve(async (req) => {
         }
 
         if (useGravity) {
-          const gravity = runGravityHybridScoring(candles, type);
+          const gravity = runGravityHybridScoring(candles, type, gravityThreshold);
           // If gravity gives a valid signal, or if tredzo is disabled/invalid, use gravity
           if (gravity.mandatoryOk || (!useTredzo)) {
              bestSignal = gravity;

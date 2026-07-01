@@ -167,6 +167,7 @@ export default function MarketScanPage() {
     const stored = localStorage.getItem('marketScan_enableGravityHybrid');
     return stored === null ? true : stored === 'true';
   });
+  const [gravityThreshold, setGravityThreshold] = useState(() => Number(localStorage.getItem('marketScan_gravityThreshold')) || 0.5);
   const [tradeAmountUsdt, setTradeAmountUsdt] = useState(() => Number(localStorage.getItem('marketScan_tradeAmount')) || 20);
 
   const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
@@ -194,8 +195,9 @@ export default function MarketScanPage() {
     localStorage.setItem('marketScan_autoTrade', String(autoTrade));
     localStorage.setItem('marketScan_enableTredzoSMC', String(enableTredzoSMC));
     localStorage.setItem('marketScan_enableGravityHybrid', String(enableGravityHybrid));
+    localStorage.setItem('marketScan_gravityThreshold', String(gravityThreshold));
     localStorage.setItem('marketScan_tradeAmount', String(tradeAmountUsdt));
-  }, [timeframe, autoTrade, enableTredzoSMC, enableGravityHybrid, tradeAmountUsdt]);
+  }, [timeframe, autoTrade, enableTredzoSMC, enableGravityHybrid, gravityThreshold, tradeAmountUsdt]);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeframeRef = useRef(timeframe);
   useEffect(() => { timeframeRef.current = timeframe; }, [timeframe]);
@@ -222,7 +224,8 @@ export default function MarketScanPage() {
         strategies: { 
           tredzoSMC: enableTredzoSMC,
           gravityHybrid: enableGravityHybrid 
-        }
+        },
+        gravity_threshold: gravityThreshold
       },
       method: 'POST',
     });
@@ -351,6 +354,20 @@ export default function MarketScanPage() {
                   className="scale-[0.55] origin-right ml-1 data-[state=unchecked]:bg-muted-foreground/30"
                 />
               </div>
+              {enableGravityHybrid && (
+                <div className="flex items-center gap-1 rounded border border-purple-500/30 bg-purple-500/5 px-2 py-0.5">
+                  <span className="text-[9px] text-purple-400 whitespace-nowrap">Threshold</span>
+                  <input
+                    type="number"
+                    value={gravityThreshold}
+                    onChange={(e) => setGravityThreshold(Math.max(0.1, Math.min(2, Number(e.target.value))))} 
+                    className="w-12 bg-transparent border-none text-[11px] font-mono text-purple-300 text-center outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    step="0.1"
+                    min="0.1"
+                    max="2"
+                  />
+                </div>
+              )}
             </div>
             <p className="text-sm text-muted-foreground">
               30s auto-scan · Top Gainers & Losers · SMC Reversal Signals
