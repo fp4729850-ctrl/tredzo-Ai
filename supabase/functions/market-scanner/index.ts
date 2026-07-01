@@ -106,6 +106,32 @@ function calcEMA(closes: number[], period: number): number {
   return ema;
 }
 
+function calcSMA_array(vals: number[], period: number): number[] {
+  const result = new Array(vals.length).fill(NaN);
+  if (vals.length < period) return result;
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += vals[i];
+  result[period - 1] = sum / period;
+  for (let i = period; i < vals.length; i++) {
+    sum = sum + vals[i] - vals[i - period];
+    result[i] = sum / period;
+  }
+  return result;
+}
+
+function calcEMA_array(vals: number[], period: number): number[] {
+  const result = new Array(vals.length).fill(NaN);
+  if (vals.length < period) return result;
+  const k = 2 / (period + 1);
+  let ema = vals.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  result[period - 1] = ema;
+  for (let i = period; i < vals.length; i++) {
+    ema = vals[i] * k + ema * (1 - k);
+    result[i] = ema;
+  }
+  return result;
+}
+
 function calcATR(candles: OHLCV[], period: number): number[] {
   const trs: number[] = [];
   for (let i = 0; i < candles.length; i++) {
@@ -274,6 +300,79 @@ function runTredzoScoring(candles: OHLCV[], scanType: 'gainer' | 'loser'): Tredz
 
   const best = Math.max(bullScore, bearScore);
   return HOLD(`Score: ${best}/100 — No full setup`);
+}
+
+// ─── Gravity Hybrid Scoring ───────────────────────────────────────────────────
+
+function runGravityHybridScoring(candles: OHLCV[], scanType: 'gainer' | 'loser'): TredzoResult {
+  const HOLD = (r: string): TredzoResult => ({ signal: 'HOLD', score: 0, mandatoryOk: false, reason: r });
+  if (candles.length < 50) return HOLD('Not enough data');
+
+  const closes  = candles.map(c => c.close);
+  const volumes = candles.map(c => c.volume);
+  const dollarVol = closes.map((c, i) => c * volumes[i]);
+
+  const basis = calcEMA_array(closes, 14);
+  const sma24 = calcSMA_array(closes, 24);
+  const madArray = closes.map((c, i) => Math.abs(c - (sma24[i] ?? c)));
+  const mad = calcSMA_array(madArray, 24);
+  const avgDollar = calcSMA_array(dollarVol, 50);
+
+  const vel = basis.map((b, i) => i >= 19 ? b - basis[i - 19] : 0);
+  const accel = vel.map((v, i) => i >= 1 ? v - vel[i - 1] : 0);
+
+  const gravityArray = new Array(candles.length).fill(0);
+  for (let i = 0; i < candles.length; i++) {
+    const m = mad[i] ?? 0;
+    const a = accel[i] ?? 0;
+    const normA = m > 0 ? (a / m) : 0;
+    let g = i > 0 ? gravityArray[i - 1] : 0;
+    if (Math.abs(normA) > 0.01) {
+      g = Math.max(-2, Math.min(normA * 8, 2));
+    } else {
+      g = g * 0.96;
+    }
+    gravityArray[i] = g;
+  }
+
+  const currIdx = candles.length - 1;
+  const curr = candles[currIdx];
+  const g = gravityArray[currIdx];
+  const m = mad[currIdx] ?? 0;
+  const b = basis[currIdx] ?? 0;
+
+  const upper = b + m * (1.8 - 0.8 * Math.min(Math.abs(g) / 1.5, 1));
+  const lower = b - m * (1.8 - 0.8 * Math.min(Math.abs(g) / 1.5, 1));
+
+  const strongVol = dollarVol[currIdx] > (avgDollar[currIdx] ?? 0) * 1.5;
+
+  const ph = calcPivotHighs(candles, 6);
+  const pl = calcPivotLows(candles, 6);
+
+  let lastHighPool = NaN;
+  let lastLowPool = NaN;
+  for (let i = currIdx - 6; i >= 0; i--) {
+    if (isNaN(lastLowPool) && !isNaN(pl[i])) lastLowPool = pl[i];
+    if (isNaN(lastHighPool) && !isNaN(ph[i])) lastHighPool = ph[i];
+    if (!isNaN(lastLowPool) && !isNaN(lastHighPool)) break;
+  }
+
+  const bullPropulsion = curr.close > lower && curr.low < lastLowPool && curr.close > lastLowPool && strongVol && g > 0.8;
+  const bearPropulsion = curr.close < upper && curr.high > lastHighPool && curr.close < lastHighPool && strongVol && g < -0.8;
+
+  if (bullPropulsion && scanType === 'loser') {
+    const sl = Math.min(lastLowPool, curr.low) * 0.998;
+    const risk = curr.close - sl;
+    return { signal: 'BUY', score: 95, mandatoryOk: true, reason: 'Gravity Hybrid (Sweep + Strong Vol)', dynamicSL: sl, dynamicTP1: curr.close + risk, dynamicTP2: curr.close + risk * 2 };
+  }
+  
+  if (bearPropulsion && scanType === 'gainer') {
+    const sl = Math.max(lastHighPool, curr.high) * 1.002;
+    const risk = sl - curr.close;
+    return { signal: 'SELL', score: 95, mandatoryOk: true, reason: 'Gravity Hybrid (Sweep + Strong Vol)', dynamicSL: sl, dynamicTP1: curr.close - risk, dynamicTP2: curr.close - risk * 2 };
+  }
+
+  return HOLD('No Gravity setup');
 }
 
 // ─── Fetch klines ─────────────────────────────────────────────────────────────
@@ -447,8 +546,9 @@ Deno.serve(async (req) => {
     const topN        = body.top_n ?? 15;
     const autoTrade   = body.auto_trade === true;
     const customTradeAmount = body.trade_amount_usdt ? Number(body.trade_amount_usdt) : null;
-    const strategies  = body.strategies ?? { tredzoSMC: true };
+    const strategies  = body.strategies ?? { tredzoSMC: true, gravityHybrid: true };
     const useTredzo   = strategies.tredzoSMC !== false;
+    const useGravity  = strategies.gravityHybrid !== false;
 
     // 1. Fetch all USDT tickers from Binance Futures
     let tickers: BinanceTicker[] = [];
@@ -488,22 +588,33 @@ Deno.serve(async (req) => {
         const volume    = parseFloat(ticker.quoteVolume);
         const candles   = await fetchKlines(ticker.symbol, timeframe);
         
-        let tredzo = { signal: 'HOLD', score: 0, mandatoryOk: false, reason: 'Strategy Disabled', dynamicSL: undefined, dynamicTP1: undefined, dynamicTP2: undefined };
+        let bestSignal = { signal: 'HOLD', score: 0, mandatoryOk: false, reason: 'Strategy Disabled', dynamicSL: undefined as number|undefined, dynamicTP1: undefined as number|undefined, dynamicTP2: undefined as number|undefined };
+        
         if (useTredzo) {
-          tredzo = runTredzoScoring(candles, type) as any;
+          const tredzo = runTredzoScoring(candles, type);
+          if (tredzo.mandatoryOk) bestSignal = tredzo;
+          else bestSignal = tredzo;
+        }
+
+        if (useGravity) {
+          const gravity = runGravityHybridScoring(candles, type);
+          // If gravity gives a valid signal, or if tredzo is disabled/invalid, use gravity
+          if (gravity.mandatoryOk || (!useTredzo)) {
+             bestSignal = gravity;
+          }
         }
 
         const item: ScanItem = {
           id: `${type}-${idx}`, symbol: ticker.symbol,
           price, change_pct_24h: +changePct.toFixed(2), volume_24h: +volume.toFixed(0),
           scan_type: type,
-          signal_direction: tredzo.signal === 'HOLD' ? null : (tredzo.signal === 'BUY' ? 'buy' : 'sell'),
-          confidence: tredzo.score, timeframe, scanned_at: scannedAt,
-          tredzo_score: tredzo.score, tredzo_reason: tredzo.reason,
-          mandatory_ok: tredzo.mandatoryOk,
-          dynamic_sl:   tredzo.dynamicSL,
-          dynamic_tp1:  tredzo.dynamicTP1,
-          dynamic_tp2:  tredzo.dynamicTP2,
+          signal_direction: bestSignal.signal === 'HOLD' ? null : (bestSignal.signal === 'BUY' ? 'buy' : 'sell'),
+          confidence: bestSignal.score, timeframe, scanned_at: scannedAt,
+          tredzo_score: bestSignal.score, tredzo_reason: bestSignal.reason,
+          mandatory_ok: bestSignal.mandatoryOk,
+          dynamic_sl:   bestSignal.dynamicSL,
+          dynamic_tp1:  bestSignal.dynamicTP1,
+          dynamic_tp2:  bestSignal.dynamicTP2,
         };
         return item;
       })

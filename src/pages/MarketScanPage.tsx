@@ -13,7 +13,7 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { TrendingUp, TrendingDown, RefreshCw, ScanLine, Zap, Radio, Pause, Play, CheckCircle2, Bot } from 'lucide-react';
+import { TrendingUp, TrendingDown, RefreshCw, ScanLine, Zap, Radio, Pause, Play, CheckCircle2, Bot, Atom } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/db/supabase';
 import type { MarketScan, Signal } from '@/types/types';
@@ -163,6 +163,10 @@ export default function MarketScanPage() {
     const stored = localStorage.getItem('marketScan_enableTredzoSMC');
     return stored === null ? true : stored === 'true';
   });
+  const [enableGravityHybrid, setEnableGravityHybrid] = useState(() => {
+    const stored = localStorage.getItem('marketScan_enableGravityHybrid');
+    return stored === null ? true : stored === 'true';
+  });
   const [tradeAmountUsdt, setTradeAmountUsdt] = useState(() => Number(localStorage.getItem('marketScan_tradeAmount')) || 20);
 
   const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
@@ -189,8 +193,9 @@ export default function MarketScanPage() {
     localStorage.setItem('marketScan_timeframe', timeframe);
     localStorage.setItem('marketScan_autoTrade', String(autoTrade));
     localStorage.setItem('marketScan_enableTredzoSMC', String(enableTredzoSMC));
+    localStorage.setItem('marketScan_enableGravityHybrid', String(enableGravityHybrid));
     localStorage.setItem('marketScan_tradeAmount', String(tradeAmountUsdt));
-  }, [timeframe, autoTrade, enableTredzoSMC, tradeAmountUsdt]);
+  }, [timeframe, autoTrade, enableTredzoSMC, enableGravityHybrid, tradeAmountUsdt]);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeframeRef = useRef(timeframe);
   useEffect(() => { timeframeRef.current = timeframe; }, [timeframe]);
@@ -214,7 +219,10 @@ export default function MarketScanPage() {
         timeframe: tf, 
         auto_trade: autoTrade, 
         trade_amount_usdt: tradeAmountUsdt,
-        strategies: { tredzoSMC: enableTredzoSMC }
+        strategies: { 
+          tredzoSMC: enableTredzoSMC,
+          gravityHybrid: enableGravityHybrid 
+        }
       },
       method: 'POST',
     });
@@ -319,10 +327,27 @@ export default function MarketScanPage() {
                 onClick={() => setEnableTredzoSMC(!enableTredzoSMC)}
               >
                 <Zap className={cn("h-2.5 w-2.5", enableTredzoSMC ? "text-primary" : "text-muted-foreground")} /> 
-                Tredzo SMC Engine
+                Tredzo SMC
                 <Switch 
                   checked={enableTredzoSMC} 
                   onCheckedChange={setEnableTredzoSMC}
+                  className="scale-[0.55] origin-right ml-1 data-[state=unchecked]:bg-muted-foreground/30"
+                />
+              </div>
+              <div 
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer',
+                  enableGravityHybrid 
+                    ? 'border-purple-500/40 text-purple-500 bg-purple-500/5' 
+                    : 'border-border text-muted-foreground bg-muted/20 hover:border-purple-500/30'
+                )}
+                onClick={() => setEnableGravityHybrid(!enableGravityHybrid)}
+              >
+                <Atom className={cn("h-2.5 w-2.5", enableGravityHybrid ? "text-purple-500" : "text-muted-foreground")} /> 
+                Gravity Hybrid
+                <Switch 
+                  checked={enableGravityHybrid} 
+                  onCheckedChange={setEnableGravityHybrid}
                   className="scale-[0.55] origin-right ml-1 data-[state=unchecked]:bg-muted-foreground/30"
                 />
               </div>
