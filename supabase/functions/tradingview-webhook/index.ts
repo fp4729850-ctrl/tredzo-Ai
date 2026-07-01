@@ -96,6 +96,18 @@ serve(async (req) => {
       return new Response(JSON.stringify(data), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    if (payload.action === "DEBUG_POSITIONS") {
+      const { data: settingsList } = await client.from('user_settings').select('*').eq('webhook_token', token).limit(1);
+      const s = settingsList?.[0];
+      if (!s) return new Response("No settings", { status: 400 });
+      const tm = s.trading_mode === 'futures' ? 'futures' : 'spot';
+      const test = s.use_testnet ?? true;
+      const b = test ? (tm === 'futures' ? 'https://testnet.binancefuture.com' : 'https://testnet.binance.vision') : (tm === 'futures' ? 'https://fapi.binance.com' : 'https://api.binance.com');
+      const positions = await signedGet(b, '/fapi/v2/positionRisk', s.binance_api_key, s.binance_api_secret);
+      const open = positions.filter((p: any) => parseFloat(p.positionAmt) !== 0).map((p: any) => ({ symbol: p.symbol, qty: p.positionAmt, side: p.positionSide, profit: p.unRealizedProfit }));
+      return new Response(JSON.stringify({ isTestnet: test, url: b, openPositions: open }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     // ── PROXY: Bypass US IP restriction ──
     if (!payload.is_proxied) {
       console.log(`[webhook] Proxying via DB...`);
@@ -243,20 +255,33 @@ serve(async (req) => {
     const closeSide = side === 'BUY' ? 'SELL' : 'BUY';
     logDirection = side === 'BUY' ? 'buy' : 'sell';
 
-    // Check existing position (skip if already in a trade)
+    // Check existing position
     if (tradingMode === 'futures') {
       const existingPos = await getOpenPosition(base, apiKey, apiSecret, symbol);
       if (existingPos) {
-        console.log(`[webhook] SKIP entry: ${symbol} already has ${existingPos.side} position (${existingPos.qty})`);
-        await client.from('signals').insert({
-          user_id: settings.user_id, strategy_id: payload.strategyId || null, symbol,
-          direction: logDirection, confidence: 99, entry_price: price,
-          stop_loss: 0, take_profit: 0, timeframe: 'Webhook',
-          reason: `Skipped: Already ${existingPos.side} (${existingPos.qty})`, status: 'cancelled',
-        });
-        return new Response(JSON.stringify({ success: true, message: `Skipped: existing ${existingPos.side} position` }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        if ((existingPos.side === 'LONG' && side === 'SELL') || (existingPos.side === 'SHORT' && side === 'BUY')) {
+          console.log(`[webhook] REVERSAL: Closing existing ${existingPos.side} position for ${symbol}`);
+          try {
+            await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
+              symbol, side: side, type: 'MARKET', quantity: String(existingPos.qty), reduceOnly: 'true'
+            });
+            console.log(`[webhook] Reversal close successful.`);
+          } catch (e) {
+            console.error(`[webhook] Reversal close failed: ${(e as Error).message}`);
+          }
+          // Continue to open the new position below!
+        } else {
+          console.log(`[webhook] SKIP entry: ${symbol} already has ${existingPos.side} position (${existingPos.qty})`);
+          await client.from('signals').insert({
+            user_id: settings.user_id, strategy_id: payload.strategyId || null, symbol,
+            direction: logDirection, confidence: 99, entry_price: price,
+            stop_loss: 0, take_profit: 0, timeframe: 'Webhook',
+            reason: `Skipped: Already ${existingPos.side} (${existingPos.qty})`, status: 'cancelled',
+          });
+          return new Response(JSON.stringify({ success: true, message: `Skipped: existing ${existingPos.side} position` }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
       }
     }
 

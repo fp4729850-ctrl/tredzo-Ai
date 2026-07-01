@@ -9,6 +9,21 @@ export async function getUserSettings(): Promise<UserSettings | null> {
     .from('user_settings')
     .select('*')
     .maybeSingle();
+    
+  if (!data) {
+    // Auto-initialize settings for new users to generate webhook token, etc.
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase.from('user_settings').insert({ user_id: user.id });
+      // Fetch again after inserting
+      const { data: newData } = await supabase
+        .from('user_settings')
+        .select('*')
+        .maybeSingle();
+      return newData ?? null;
+    }
+  }
+  
   return data ?? null;
 }
 
