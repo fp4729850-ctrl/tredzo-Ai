@@ -16,8 +16,9 @@ import {
 import { TrendingUp, TrendingDown, RefreshCw, ScanLine, Zap, Radio, Pause, Play, CheckCircle2, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/db/supabase';
-import type { MarketScan } from '@/types/types';
+import type { MarketScan, Signal } from '@/types/types';
 import { toast } from 'sonner';
+import { getSignals } from '@/services/api';
 
 const AUTO_REFRESH_SECS = 30;
 
@@ -162,6 +163,22 @@ export default function MarketScanPage() {
 
   const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
   const [countdown, setCountdown] = useState(AUTO_REFRESH_SECS);
+  
+  // Historical Signals State
+  const [recentSignals, setRecentSignals] = useState<Signal[]>([]);
+  
+  // Fetch historical signals
+  const fetchRecentSignals = useCallback(async () => {
+    // get top 20 recent signals
+    const sigs = await getSignals(20);
+    // filter to show only Tredzo Scanner signals
+    const scannerSigs = sigs.filter(s => s.reason?.includes('Tredzo Scanner'));
+    setRecentSignals(scannerSigs);
+  }, []);
+
+  useEffect(() => {
+    fetchRecentSignals();
+  }, [fetchRecentSignals]);
 
   // Sync preferences to localStorage
   useEffect(() => {
@@ -227,7 +244,10 @@ export default function MarketScanPage() {
     }
     setScanning(false);
     setLoading(false);
-  }, [autoTrade]); // eslint-disable-line react-hooks/exhaustive-deps
+    
+    // update historical signals list after scan
+    fetchRecentSignals();
+  }, [autoTrade, fetchRecentSignals]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setLoading(true);
@@ -470,6 +490,71 @@ export default function MarketScanPage() {
                   ) : (
                     displayData.map(scan => (
                       <ScanRow key={scan.id} scan={scan} onSignal={handleSignal} />
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Recent Signals History */}
+        <Card className="border-border bg-card mt-6">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Zap className="h-4 w-4 text-primary" />
+              Recent Signals History (Last 24h)
+              <span className="text-[10px] font-normal text-muted-foreground">
+                (Signals that were generated recently and saved)
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-0 pb-2">
+            <div className="w-full overflow-x-auto">
+              <table className="w-full min-w-max">
+                <thead>
+                  <tr className="border-b border-border bg-muted/20">
+                    <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-medium text-muted-foreground">Time</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-medium text-muted-foreground">Symbol</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-medium text-muted-foreground">Direction</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-medium text-muted-foreground">Price</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-medium text-muted-foreground">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentSignals.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                        No recent signals recorded.
+                      </td>
+                    </tr>
+                  ) : (
+                    recentSignals.map(sig => (
+                      <tr key={sig.id} className="border-b border-border/40 hover:bg-muted/10 transition-colors">
+                        <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                          {new Date(sig.created_at).toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2.5 text-sm font-medium font-mono text-foreground">
+                          {sig.symbol}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <Badge variant="outline" className={cn('text-[10px]', sig.direction === 'buy' ? 'signal-buy' : 'signal-sell')}>
+                            {sig.direction?.toUpperCase()}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2.5 text-sm font-mono text-foreground">
+                          ${formatPrice(Number(sig.price))}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                          {sig.status === 'executed' ? (
+                            <span className="text-success font-semibold flex items-center gap-1">
+                              <CheckCircle2 className="h-3 w-3" /> Auto-Traded
+                            </span>
+                          ) : (
+                            <span>{sig.status}</span>
+                          )}
+                        </td>
+                      </tr>
                     ))
                   )}
                 </tbody>

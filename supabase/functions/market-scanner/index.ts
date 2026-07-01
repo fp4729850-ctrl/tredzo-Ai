@@ -430,18 +430,6 @@ async function executeAutoTrade(
       opened_at:        new Date().toISOString(),
     });
 
-    // End of trade execution block
-    // Log signal
-    await sb.from('signals').insert({
-      user_id:    userId,
-      symbol,
-      direction:  side === 'BUY' ? 'buy' : 'sell',
-      price:      item.price,
-      status:     'executed',
-      reason:     `Tredzo Scanner (Score ${item.tredzo_score}/100): ${item.tredzo_reason}`,
-      created_at: new Date().toISOString(),
-    });
-
     return { success: true, msg: `${side} ${qty} ${symbol} @ $${item.price} [Score: ${item.tredzo_score}]` };
   } catch (e) {
     return { success: false, msg: (e as Error).message };
@@ -526,40 +514,57 @@ Deno.serve(async (req) => {
     // 4. Auto-Trade execution
     const tradeResults: Array<{ symbol: string; success: boolean; msg: string }> = [];
 
-    if (autoTrade && signals.length > 0) {
-      // Get user from JWT
-      const authHeader = req.headers.get('Authorization');
-      if (authHeader) {
-        const sbClient = createClient(
+    // 4.5. Log signals to DB for this user (always)
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader && signals.length > 0) {
+      const sbClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+        { global: { headers: { Authorization: authHeader } } }
+      );
+      const { data: { user } } = await sbClient.auth.getUser();
+
+      if (user) {
+        const sbAdmin = createClient(
           Deno.env.get('SUPABASE_URL') ?? '',
-          Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-          { global: { headers: { Authorization: authHeader } } }
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         );
-        const { data: { user } } = await sbClient.auth.getUser();
 
-        if (user) {
-          const sbAdmin = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-          );
+        // Fetch user settings to check for API keys & autoTrade execution
+        const { data: settings } = await sbAdmin
+          .from('user_settings')
+          .select('binance_api_key, binance_api_secret, trading_mode, use_testnet, testnet_mode, position_size_pct, trade_amount_usdt, trailing_sl_percent')
+          .eq('user_id', user.id)
+          .maybeSingle() as { data: UserSettings | null };
 
-          // Fetch user settings
-          const { data: settings } = await sbAdmin
-            .from('user_settings')
-            .select('binance_api_key, binance_api_secret, trading_mode, use_testnet, testnet_mode, position_size_pct, trade_amount_usdt, trailing_sl_percent')
-            .eq('user_id', user.id)
-            .maybeSingle() as { data: UserSettings | null };
+        // 1. ALWAYS LOG THE SIGNALS for this user
+        // We log them as 'pending' initially, and if autoTrade executes them, we could update, 
+        // but just logging them as 'pending' or 'executed' based on autoTrade flag is fine.
+        for (const signal of signals) {
+          try {
+            await sbAdmin.from('signals').insert({
+              user_id:    user.id,
+              symbol:     signal.symbol.toUpperCase(),
+              direction:  signal.signal_direction,
+              price:      signal.price,
+              status:     autoTrade && settings?.binance_api_key ? 'executed' : 'pending',
+              reason:     `Tredzo Scanner (Score ${signal.tredzo_score}/100): ${signal.tredzo_reason}`,
+              created_at: new Date().toISOString(),
+            });
+          } catch (e) {
+            console.error('Failed to log signal:', e);
+          }
+        }
 
+        // 2. Execute auto trade if enabled
+        if (autoTrade) {
           if (settings?.binance_api_key) {
-            // Override trade amount if provided by the client request
             if (customTradeAmount && customTradeAmount > 0) {
               settings.trade_amount_usdt = customTradeAmount;
             }
-            
             for (const signal of signals) {
               const result = await executeAutoTrade(signal, settings, user.id, sbAdmin);
               tradeResults.push({ symbol: signal.symbol, ...result });
-              // Small delay between orders to avoid rate limits
               await new Promise(r => setTimeout(r, 300));
             }
           } else {
