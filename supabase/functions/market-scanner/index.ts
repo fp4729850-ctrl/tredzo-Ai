@@ -649,11 +649,15 @@ Deno.serve(async (req) => {
         );
 
         // Fetch user settings to check for API keys & autoTrade execution
-        const { data: settings } = await sbAdmin
+        const { data: settings, error: settingsError } = await sbAdmin
           .from('user_settings')
-          .select('binance_api_key, binance_api_secret, trading_mode, use_testnet, testnet_mode, position_size_pct, trade_amount_usdt, trailing_sl_percent')
+          .select('binance_api_key, binance_api_secret, trading_mode, use_testnet, position_size_pct')
           .eq('user_id', user.id)
-          .maybeSingle() as { data: UserSettings | null };
+          .maybeSingle() as { data: UserSettings | null; error: any };
+
+        if (settingsError) {
+          console.error('[market-scanner] Settings query error:', settingsError);
+        }
 
         // 1. ALWAYS LOG THE SIGNALS for this user
         // We log them as 'pending' initially, and if autoTrade executes them, we could update, 
