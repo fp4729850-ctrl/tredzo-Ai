@@ -447,6 +447,8 @@ Deno.serve(async (req) => {
     const topN        = body.top_n ?? 15;
     const autoTrade   = body.auto_trade === true;
     const customTradeAmount = body.trade_amount_usdt ? Number(body.trade_amount_usdt) : null;
+    const strategies  = body.strategies ?? { tredzoSMC: true };
+    const useTredzo   = strategies.tredzoSMC !== false;
 
     // 1. Fetch all USDT tickers from Binance Futures
     let tickers: BinanceTicker[] = [];
@@ -485,7 +487,11 @@ Deno.serve(async (req) => {
         const changePct = parseFloat(ticker.priceChangePercent);
         const volume    = parseFloat(ticker.quoteVolume);
         const candles   = await fetchKlines(ticker.symbol, timeframe);
-        const tredzo    = runTredzoScoring(candles, type);
+        
+        let tredzo = { signal: 'HOLD', score: 0, mandatoryOk: false, reason: 'Strategy Disabled', dynamicSL: undefined, dynamicTP1: undefined, dynamicTP2: undefined };
+        if (useTredzo) {
+          tredzo = runTredzoScoring(candles, type) as any;
+        }
 
         const item: ScanItem = {
           id: `${type}-${idx}`, symbol: ticker.symbol,

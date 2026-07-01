@@ -159,6 +159,10 @@ export default function MarketScanPage() {
     // If not set, default to true
     return stored === null ? true : stored === 'true';
   });
+  const [enableTredzoSMC, setEnableTredzoSMC] = useState(() => {
+    const stored = localStorage.getItem('marketScan_enableTredzoSMC');
+    return stored === null ? true : stored === 'true';
+  });
   const [tradeAmountUsdt, setTradeAmountUsdt] = useState(() => Number(localStorage.getItem('marketScan_tradeAmount')) || 20);
 
   const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
@@ -184,8 +188,9 @@ export default function MarketScanPage() {
   useEffect(() => {
     localStorage.setItem('marketScan_timeframe', timeframe);
     localStorage.setItem('marketScan_autoTrade', String(autoTrade));
+    localStorage.setItem('marketScan_enableTredzoSMC', String(enableTredzoSMC));
     localStorage.setItem('marketScan_tradeAmount', String(tradeAmountUsdt));
-  }, [timeframe, autoTrade, tradeAmountUsdt]);
+  }, [timeframe, autoTrade, enableTredzoSMC, tradeAmountUsdt]);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeframeRef = useRef(timeframe);
   useEffect(() => { timeframeRef.current = timeframe; }, [timeframe]);
@@ -205,7 +210,12 @@ export default function MarketScanPage() {
     if (!silent) toast.info('🤖 Tredzo SMC Engine scanning Binance markets...', { icon: '⚡' });
 
     const { data, error } = await supabase.functions.invoke('market-scanner', {
-      body: { timeframe: tf, auto_trade: autoTrade, trade_amount_usdt: tradeAmountUsdt },
+      body: { 
+        timeframe: tf, 
+        auto_trade: autoTrade, 
+        trade_amount_usdt: tradeAmountUsdt,
+        strategies: { tredzoSMC: enableTredzoSMC }
+      },
       method: 'POST',
     });
 
@@ -299,9 +309,23 @@ export default function MarketScanPage() {
                   <Radio className="h-2.5 w-2.5" /> LIVE
                 </Badge>
               )}
-              <Badge variant="outline" className="gap-1 border-primary/40 text-primary text-[10px]">
-                <Zap className="h-2.5 w-2.5" /> Tredzo SMC Engine
-              </Badge>
+              <div 
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors cursor-pointer',
+                  enableTredzoSMC 
+                    ? 'border-primary/40 text-primary bg-primary/5' 
+                    : 'border-border text-muted-foreground bg-muted/20 hover:border-primary/30'
+                )}
+                onClick={() => setEnableTredzoSMC(!enableTredzoSMC)}
+              >
+                <Zap className={cn("h-2.5 w-2.5", enableTredzoSMC ? "text-primary" : "text-muted-foreground")} /> 
+                Tredzo SMC Engine
+                <Switch 
+                  checked={enableTredzoSMC} 
+                  onCheckedChange={setEnableTredzoSMC}
+                  className="scale-[0.55] origin-right ml-1 data-[state=unchecked]:bg-muted-foreground/30"
+                />
+              </div>
             </div>
             <p className="text-sm text-muted-foreground">
               30s auto-scan · Top Gainers & Losers · SMC Reversal Signals
