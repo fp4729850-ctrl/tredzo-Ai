@@ -428,12 +428,23 @@ async function executeAutoTrade(
 
     if (existingTrade) return { success: false, msg: `Open trade already exists for ${symbol}` };
 
+    // Auto-Set Leverage (Futures only)
+    if (isFutures) {
+      try {
+        await signedPost(base, `${prefix}/leverage`, apiKey, apiSecret, {
+          symbol, leverage: '10'
+        });
+      } catch (e) {
+        console.warn(`[market-scanner] Could not set leverage for ${symbol}, it might already be set:`, (e as Error).message);
+      }
+    }
+
     // Calculate budget
     const usdtBudget = settings.trade_amount_usdt
       ?? (settings.position_size_pct ? 1000 * settings.position_size_pct / 100 : 10);
 
     const qty = await calcQty(base, prefix, symbol, item.price, usdtBudget);
-    if (qty <= 0) return { success: false, msg: 'Qty too small' };
+    if (qty <= 0) return { success: false, msg: 'Qty too small (Try increasing Trade Amount in Settings)' };
 
     // Place market order
     let order;
