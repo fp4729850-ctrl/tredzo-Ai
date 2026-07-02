@@ -70,6 +70,20 @@ async function signedPost(base: string, path: string, apiKey: string, secret: st
   return j;
 }
 
+async function signedGet(base: string, path: string, apiKey: string, secret: string, params: Record<string, string>) {
+  const ts = Date.now().toString();
+  const all = { ...params, recvWindow: RECV_WINDOW, timestamp: ts };
+  const qs = new URLSearchParams(all).toString();
+  const sig = await hmacSha256(secret, qs);
+  const res = await fetch(`${base}${path}?${qs}&signature=${sig}`, {
+    method: 'GET',
+    headers: { 'X-MBX-APIKEY': apiKey },
+  });
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.msg || `HTTP ${res.status}`);
+  return j;
+}
+
 async function calcQty(base: string, prefix: string, sym: string, price: number, usdtAmount: number): Promise<number> {
   const rawQty = usdtAmount / price;
   try {
@@ -427,6 +441,21 @@ async function executeAutoTrade(
       .maybeSingle();
 
     if (existingTrade) return { success: false, msg: `Open trade already exists for ${symbol}` };
+
+    // Extra safety: Check Binance API directly to prevent duplicate trades
+    if (isFutures) {
+      try {
+        const positions = await signedGet(base, `${prefix}/positionRisk`, apiKey, apiSecret, { symbol });
+        if (positions && positions.length > 0) {
+          const amt = Math.abs(parseFloat(positions[0].positionAmt));
+          if (amt > 0) {
+            return { success: false, msg: `Position already open on Binance for ${symbol}` };
+          }
+        }
+      } catch (e) {
+        console.warn(`[market-scanner] Could not check position risk for ${symbol}:`, (e as Error).message);
+      }
+    }
 
     // Auto-Set Leverage (Futures only)
     if (isFutures) {
