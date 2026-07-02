@@ -655,6 +655,36 @@ Deno.serve(async (req) => {
           Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         );
 
+        // --- 24 HOUR COOLDOWN LOGIC ---
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { data: recentSignals } = await sbAdmin
+          .from('signals')
+          .select('symbol')
+          .eq('user_id', user.id)
+          .gte('created_at', oneDayAgo);
+        
+        const cooldownSymbols = new Set((recentSignals ?? []).map(s => s.symbol.toUpperCase()));
+        
+        // Filter out signals that are under cooldown
+        signals = signals.filter(s => !cooldownSymbols.has(s.symbol.toUpperCase()));
+        
+        // Strip signal flags from gainers/losers for UI
+        for (const g of gainers) {
+          if (cooldownSymbols.has(g.symbol.toUpperCase())) {
+            g.signal_direction = null;
+            g.mandatory_ok = false;
+            g.tredzo_reason = 'Cooldown (24h)';
+          }
+        }
+        for (const l of losers) {
+          if (cooldownSymbols.has(l.symbol.toUpperCase())) {
+            l.signal_direction = null;
+            l.mandatory_ok = false;
+            l.tredzo_reason = 'Cooldown (24h)';
+          }
+        }
+        // ------------------------------
+
         // Fetch user settings to check for API keys & autoTrade execution
         const { data: settings, error: settingsError } = await sbAdmin
           .from('user_settings')
