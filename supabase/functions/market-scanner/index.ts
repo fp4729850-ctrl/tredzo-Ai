@@ -456,75 +456,42 @@ async function executeAutoTrade(
       return { success: false, msg: `Market Order Error: ${(e as Error).message}` };
     }
 
-    // Place SL order (futures only)
-    if (isFutures && item.dynamic_sl) {
-      const slPrice = +item.dynamic_sl.toFixed(4);
-      try {
-        await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
-          symbol, side: closeSide, type: 'STOP_MARKET',
-          stopPrice: String(slPrice), closePosition: 'true',
-        });
-      } catch (e) {
-        console.error(`[market-scanner] SL order failed: ${(e as Error).message}`);
-      }
-    }
+    // Fixed 50% ROI TP and SL
+    if (isFutures) {
+      // 50% ROI on margin at 10x leverage means 5% price movement
+      const movePercent = 0.05;
+      const offset = item.price * movePercent;
+      
+      const tpPrice = side === 'BUY' ? item.price + offset : item.price - offset;
+      const slPrice = side === 'BUY' ? item.price - offset : item.price + offset;
 
-    // ----- Quantity split for TP1 and Trailing SL -----
-    const qtyHalf = Number((qty / 2).toFixed(4)); // first half for TP1
-    const qtyRemaining = Number((qty - qtyHalf).toFixed(4));
-
-    // Place market order for full qty (already done above)
-    // Place TP1 order for first half
-    if (isFutures && item.dynamic_tp1) {
-      const tpPrice = +item.dynamic_tp1.toFixed(4);
+      // 1. Place TP Order
       try {
         await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
           symbol,
           side: closeSide,
           type: 'TAKE_PROFIT_MARKET',
-          stopPrice: String(tpPrice),
-          quantity: String(qtyHalf),
-          closePosition: 'false',
+          stopPrice: String(+tpPrice.toFixed(4)),
+          closePosition: 'true',
         });
       } catch (e) {
-        console.error(`[market-scanner] TP1 order failed: ${(e as Error).message}`);
+        console.error(`[market-scanner] TP order failed: ${(e as Error).message}`);
       }
-    }
 
-    // Place Trailing Stop order for remaining half (if supported)
-    const trailingRate = settings.trailing_sl_percent ?? 2; // default 2%
-    if (isFutures && trailingRate > 0 && qtyRemaining > 0) {
-      try {
-        await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
-          symbol,
-          side: closeSide,
-          type: 'TRAILING_STOP_MARKET',
-          callbackRate: String(trailingRate),
-          quantity: String(qtyRemaining),
-          closePosition: 'false',
-        });
-        console.log(`[market-scanner] Trailing SL placed for ${symbol} @ ${trailingRate}%`);
-      } catch (e) {
-        console.error(`[market-scanner] Trailing SL order failed: ${(e as Error).message}`);
-      }
-    }
-
-    // Place SL order for the whole position (if needed)
-    if (isFutures && item.dynamic_sl) {
-      const slPrice = +item.dynamic_sl.toFixed(4);
+      // 2. Place SL Order
       try {
         await signedPost(base, `${prefix}/order`, apiKey, apiSecret, {
           symbol,
           side: closeSide,
           type: 'STOP_MARKET',
-          stopPrice: String(slPrice),
-          quantity: String(qty),
+          stopPrice: String(+slPrice.toFixed(4)),
           closePosition: 'true',
         });
       } catch (e) {
         console.error(`[market-scanner] SL order failed: ${(e as Error).message}`);
       }
     }
+
 
     // Log to trades table (store full qty; individual TP/TSL handled separately)
     await sb.from('trades').insert({
