@@ -583,6 +583,7 @@ export default function MarketScanPage() {
                     <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-medium text-muted-foreground">Time</th>
                     <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-medium text-muted-foreground">Symbol</th>
                     <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-medium text-muted-foreground">Direction</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-medium text-muted-foreground">Strategy</th>
                     <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-medium text-muted-foreground">Price</th>
                     <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-medium text-muted-foreground">Status</th>
                   </tr>
@@ -590,7 +591,7 @@ export default function MarketScanPage() {
                 <tbody>
                   {recentSignals.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      <td colSpan={6} className="px-3 py-6 text-center text-sm text-muted-foreground">
                         No recent signals recorded.
                       </td>
                     </tr>
@@ -607,6 +608,9 @@ export default function MarketScanPage() {
                           <Badge variant="outline" className={cn('text-[10px]', sig.direction === 'buy' ? 'signal-buy' : 'signal-sell')}>
                             {sig.direction?.toUpperCase()}
                           </Badge>
+                        </td>
+                        <td className="px-3 py-2.5 text-[10px] text-muted-foreground/80 truncate max-w-[120px]">
+                          {sig.reason?.includes('Gravity') ? 'Gravity Hybrid' : (sig.reason?.includes('Tredzo SMC') ? 'Tredzo SMC' : 'Tredzo Scanner')}
                         </td>
                         <td className="px-3 py-2.5 text-sm font-mono text-foreground">
                           ${formatPrice(Number(sig.entry_price))}
