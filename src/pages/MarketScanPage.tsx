@@ -170,10 +170,20 @@ export default function MarketScanPage() {
   const [gravityThreshold, setGravityThreshold] = useState(() => Number(localStorage.getItem('marketScan_gravityThreshold')) || 0.5);
   const [tradeAmountUsdt, setTradeAmountUsdt] = useState(() => Number(localStorage.getItem('marketScan_tradeAmount')) || 20);
 
+  const tradeAmountUsdtRef = useRef(tradeAmountUsdt);
+  useEffect(() => { tradeAmountUsdtRef.current = tradeAmountUsdt; }, [tradeAmountUsdt]);
+  
+  const enableTredzoSMCRef = useRef(enableTredzoSMC);
+  useEffect(() => { enableTredzoSMCRef.current = enableTredzoSMC; }, [enableTredzoSMC]);
+  
+  const enableGravityHybridRef = useRef(enableGravityHybrid);
+  useEffect(() => { enableGravityHybridRef.current = enableGravityHybrid; }, [enableGravityHybrid]);
+  
+  const gravityThresholdRef = useRef(gravityThreshold);
+  useEffect(() => { gravityThresholdRef.current = gravityThreshold; }, [gravityThreshold]);
+
   const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
   const [countdown, setCountdown] = useState(AUTO_REFRESH_SECS);
-  
-  // Historical Signals State
   const [recentSignals, setRecentSignals] = useState<Signal[]>([]);
   
   // Fetch historical signals
@@ -220,12 +230,12 @@ export default function MarketScanPage() {
       body: { 
         timeframe: tf, 
         auto_trade: autoTrade, 
-        trade_amount_usdt: tradeAmountUsdt,
+        trade_amount_usdt: tradeAmountUsdtRef.current,
         strategies: { 
-          tredzoSMC: enableTredzoSMC,
-          gravityHybrid: enableGravityHybrid 
+          tredzoSMC: enableTredzoSMCRef.current,
+          gravityHybrid: enableGravityHybridRef.current 
         },
-        gravity_threshold: gravityThreshold
+        gravity_threshold: gravityThresholdRef.current
       },
       method: 'POST',
     });
