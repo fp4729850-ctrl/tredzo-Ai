@@ -146,6 +146,15 @@ export async function getTradesBySymbol(symbol: string): Promise<Trade[]> {
   return Array.isArray(data) ? data : [];
 }
 
+// Fetch live open positions from Binance
+export async function fetchBinancePositions(): Promise<any[]> {
+  const { data, error } = await supabase.functions.invoke('binance-positions', {
+    method: 'GET',
+  });
+  if (error) throw error;
+  return data?.positions || [];
+}
+
 // All trades for P&L aggregation on StrategiesPage
 export async function getAllTradesSummary(): Promise<{
   bySymbol: Record<string, { totalTrades: number; wins: number; realizedPnlPct: number; openCount: number }>;

@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/db/supabase';
 import type { MarketScan, Signal } from '@/types/types';
 import { toast } from 'sonner';
-import { getSignals } from '@/services/api';
+import { getSignals, fetchBinancePositions } from '@/services/api';
 
 const AUTO_REFRESH_SECS = 30;
 
@@ -185,6 +185,7 @@ export default function MarketScanPage() {
   const [showAutoTradeConfirm, setShowAutoTradeConfirm] = useState(false);
   const [countdown, setCountdown] = useState(AUTO_REFRESH_SECS);
   const [recentSignals, setRecentSignals] = useState<Signal[]>([]);
+  const [livePositions, setLivePositions] = useState<any[]>([]);
   
   // Fetch historical signals
   const fetchRecentSignals = useCallback(async () => {
@@ -195,9 +196,19 @@ export default function MarketScanPage() {
     setRecentSignals(scannerSigs);
   }, []);
 
+  const fetchLivePositions = useCallback(async () => {
+    try {
+      const positions = await fetchBinancePositions();
+      setLivePositions(positions);
+    } catch (e) {
+      console.error('Failed to fetch live positions:', e);
+    }
+  }, []);
+
   useEffect(() => {
     fetchRecentSignals();
-  }, [fetchRecentSignals]);
+    fetchLivePositions();
+  }, [fetchRecentSignals, fetchLivePositions]);
 
   // Sync preferences to localStorage
   useEffect(() => {
@@ -278,7 +289,8 @@ export default function MarketScanPage() {
     
     // update historical signals list after scan
     fetchRecentSignals();
-  }, [autoTrade, fetchRecentSignals]); // eslint-disable-line react-hooks/exhaustive-deps
+    fetchLivePositions();
+  }, [autoTrade, fetchRecentSignals, fetchLivePositions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setLoading(true);
@@ -636,6 +648,66 @@ export default function MarketScanPage() {
                         </td>
                       </tr>
                     ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Live Binance Positions */}
+      <div className="max-w-6xl mx-auto w-full mb-8 space-y-4">
+        <Card className="border-border bg-card shadow-lg">
+          <CardHeader className="border-b border-border/40 pb-4">
+            <CardTitle className="text-lg font-bold flex items-center gap-2">
+              <Zap className="h-5 w-5 text-warning" />
+              Live Binance Positions (PnL)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-border/50 bg-muted/20 text-xs text-muted-foreground">
+                    <th className="px-4 py-3 font-semibold">Symbol</th>
+                    <th className="px-4 py-3 font-semibold">Size (Coins)</th>
+                    <th className="px-4 py-3 font-semibold">Entry Price</th>
+                    <th className="px-4 py-3 font-semibold">Mark Price</th>
+                    <th className="px-4 py-3 font-semibold text-right">Unrealized PnL (USDT)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {livePositions.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-6 text-sm text-muted-foreground">
+                        No active trades currently open on Binance.
+                      </td>
+                    </tr>
+                  ) : (
+                    livePositions.map((pos, idx) => {
+                      const pnl = parseFloat(pos.unRealizedProfit);
+                      const isProfit = pnl > 0;
+                      return (
+                        <tr key={idx} className="border-b border-border/40 hover:bg-muted/10 transition-colors">
+                          <td className="px-4 py-3 text-sm font-bold font-mono text-foreground">
+                            {pos.symbol}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-muted-foreground font-mono">
+                            {pos.positionAmt}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-mono">
+                            ${formatPrice(parseFloat(pos.entryPrice))}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-mono">
+                            ${formatPrice(parseFloat(pos.markPrice))}
+                          </td>
+                          <td className={cn("px-4 py-3 text-right font-mono font-bold", isProfit ? "text-success" : "text-destructive")}>
+                            {isProfit ? '+' : ''}{pnl.toFixed(4)} USDT
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
